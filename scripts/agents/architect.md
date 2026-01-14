@@ -25,14 +25,19 @@ Assess the current state of the architecture:
 # See recent changes
 git log --oneline -20
 
-# Understand code structure
-find src -type f -name "*.ts" | head -50
+# Understand project structure (read CLAUDE.md for project-specific paths)
+# Examples for different languages:
+find . -type f \( -name "*.py" -o -name "*.ts" -o -name "*.rb" -o -name "*.go" -o -name "*.java" \) | head -50
 
-# Check service layer health
-ls -la src/services/
+# Check common architectural directories (adapt to your project)
+ls -la src/ lib/ app/ pkg/ internal/ 2>/dev/null || echo "Check CLAUDE.md for project structure"
 
-# Review API surface
-find src/app/api -name "route.ts" | wc -l
+# Get file type distribution
+echo "File type distribution:"
+find . -type f -name "*.py" | wc -l | xargs echo "Python files:"
+find . -type f -name "*.ts" -o -name "*.tsx" | wc -l | xargs echo "TypeScript files:"
+find . -type f -name "*.rb" | wc -l | xargs echo "Ruby files:"
+find . -type f -name "*.go" | wc -l | xargs echo "Go files:"
 ```
 
 Questions to answer:
@@ -47,9 +52,10 @@ Questions to answer:
 Review recent code for patterns that should be standardized:
 
 - New utility functions that could be reused
-- API patterns that should be consistent
-- Component patterns emerging in the UI
+- API/endpoint patterns that should be consistent
+- Module/component patterns emerging
 - Error handling approaches
+- Testing patterns
 
 If you discover patterns worth documenting, prepare updates for CLAUDE.md.
 

@@ -1,0 +1,55 @@
+# aiShore Framework .gitignore
+
+# User-specific configuration (users create their own from .example)
+.aishore.config
+
+# Logs and temporary files
+plan/.logs/
+*.log
+*.tmp
+*.temp
+
+# Sprint state (active sprints shouldn't be in git)
+plan/sprint-current.json
+
+# OS files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# IDE files
+.vscode/
+.idea/
+*.sublime-*
+.project
+.classpath
+.settings/
+
+# Node.js (for npm convenience wrappers)
+node_modules/
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Environment files
+.env
+.env.local
+.env*.local
+
+# Backups
+*.bak
+*.backup
+plan/*.bak
+plan/*.backup
+
+# Test coverage
+coverage/
+.coverage
+htmlcov/
+*.cover
+
+# Build artifacts (if users build docs)
+dist/
+build/

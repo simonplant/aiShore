@@ -34,8 +34,19 @@ CYAN='\033[0;36m'
 MAGENTA='\033[0;35m'
 NC='\033[0m'
 
+# Load configuration
+CONFIG_FILE="$PROJECT_ROOT/.aishore.config"
+if [[ -f "$CONFIG_FILE" ]]; then
+    source "$CONFIG_FILE"
+fi
+
+# Default validation commands (override in .aishore.config)
+VALIDATION_TYPE_CHECK="${VALIDATION_TYPE_CHECK:-echo 'No type check configured'}"
+VALIDATION_LINT="${VALIDATION_LINT:-echo 'No lint configured'}"
+VALIDATION_TEST="${VALIDATION_TEST:-echo 'No tests configured'}"
+
 # Model
-MODEL_OPUS="claude-opus-4-5-20251101"
+MODEL_OPUS="${AGENT_MODEL:-claude-opus-4-5-20251101}"
 
 # Flags
 QUICK_MODE=false

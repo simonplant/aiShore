@@ -31,12 +31,12 @@ Examples:
 ### 1. Run Automated Checks
 
 ```bash
-npm run type-check
-npm run lint
-npm test
+$VALIDATION_TYPE_CHECK
+$VALIDATION_LINT
+$VALIDATION_TEST
 ```
 
-All three must pass for the item to pass validation.
+All validation commands must pass for the item to pass validation. These commands are configured in `.aishore.config` and vary by project (TypeScript/MyPy for type checking, ESLint/Ruff/Rubocop for linting, Jest/Pytest/RSpec for testing, etc.).
 
 ### 2. Review Code Changes
 
@@ -59,13 +59,13 @@ Find the item in backlog-mvp.json and verify EACH acceptance criterion:
 
 **PASS if:**
 
-- All automated checks pass (type-check, lint, test)
+- All automated validation commands pass (type checking, linting, tests)
 - All or almost all acceptance criteria met
 - Minor issues acceptable if core functionality works
 
 **REJECT if:**
 
-- Any automated check fails
+- Any validation command fails
 - 2+ acceptance criteria NOT MET
 - Critical functionality missing
 - Tests don't cover the new code

@@ -5,27 +5,29 @@
     {
       "id": "F1-001",
       "category": "foundation",
-      "description": "Project scaffolding - Next.js with App Router, TypeScript, Tailwind",
+      "description": "Project scaffolding - Framework setup with TypeScript",
       "phase": 1,
       "useCase": null,
       "priority": "must",
       "steps": [
-        "Initialize Next.js project with TypeScript",
-        "Configure Tailwind CSS",
+        "Initialize project with chosen framework",
+        "Configure TypeScript with strict mode",
         "Set up project directory structure",
-        "Configure ESLint and Prettier",
-        "Create base layout component"
+        "Configure linting and formatting tools",
+        "Create base configuration files"
       ],
       "passes": false,
       "dependencies": [],
       "acceptanceCriteria": [
-        "Next.js app compiles and runs without errors",
+        "Project compiles and runs without errors",
         "TypeScript strict mode is enabled",
-        "Tailwind CSS is configured and working",
-        "Project structure follows conventions",
-        "ESLint and Prettier configurations are applied"
+        "Linting and formatting tools are configured and working",
+        "Project structure follows team conventions",
+        "All configuration files are properly documented"
       ],
-      "status": "todo"
+      "status": "todo",
+      "readyForSprint": true,
+      "groomedAt": "2026-01-14"
     },
     {
       "id": "F1-002",
@@ -35,41 +37,43 @@
       "useCase": null,
       "priority": "must",
       "steps": [
-        "Set up database (PostgreSQL, SQLite, etc.)",
-        "Define core schema",
+        "Set up database (PostgreSQL, MongoDB, MySQL, etc.)",
+        "Define core schema for main entities",
         "Create migration system",
-        "Add database connection handling"
+        "Add database connection handling with error recovery"
       ],
       "passes": false,
       "dependencies": ["F1-001"],
       "acceptanceCriteria": [
         "Database initializes successfully",
-        "Schema includes required tables",
-        "Migrations execute correctly",
-        "Connection handling is robust"
+        "Schema includes all required tables/collections",
+        "Migrations execute correctly and are reversible",
+        "Connection handling is robust with proper error messages"
       ],
       "status": "todo"
     },
     {
       "id": "F1-003",
       "category": "foundation",
-      "description": "Authentication system",
+      "description": "User authentication system",
       "phase": 1,
-      "useCase": null,
+      "useCase": "UC-001",
       "priority": "must",
       "steps": [
-        "Implement user registration",
-        "Implement login/logout",
-        "Add session management",
-        "Secure API routes"
+        "Implement user registration endpoint",
+        "Implement login endpoint with JWT/session tokens",
+        "Add password hashing with bcrypt",
+        "Create authentication middleware",
+        "Add logout functionality"
       ],
       "passes": false,
       "dependencies": ["F1-002"],
       "acceptanceCriteria": [
-        "Users can register and login",
-        "Sessions are securely managed",
-        "API routes require authentication",
-        "Users can only access their own data"
+        "Users can register with email and password",
+        "Users can log in with valid credentials",
+        "Invalid credentials return appropriate error messages",
+        "Session/token persists across requests",
+        "Users can securely log out"
       ],
       "status": "todo"
     }

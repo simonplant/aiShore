@@ -1,0 +1,57 @@
+# aiShore Configuration
+# Copy this file to .aishore.config and customize for your project
+
+# Project validation commands (run during VALIDATE gate)
+# These commands should exit 0 on success, non-zero on failure
+VALIDATION_TYPE_CHECK="npm run type-check"
+VALIDATION_LINT="npm run lint"
+VALIDATION_TEST="npm test"
+
+# Optional: Pre-flight checks (run during START gate)
+# Leave empty to skip pre-flight checks
+PREFLIGHT_SERVICES=""  # e.g., "docker ps | grep postgres"
+PREFLIGHT_CUSTOM=""    # Any additional checks
+
+# Project metadata (optional, for logging)
+PROJECT_NAME="your-project"
+PROJECT_LANGUAGE="typescript"  # or python, ruby, go, etc.
+
+# Agent model configuration
+AGENT_MODEL="claude-opus-4-5-20251101"
+
+# Example configurations for different languages:
+
+# === TypeScript/Node.js ===
+# VALIDATION_TYPE_CHECK="npm run type-check"
+# VALIDATION_LINT="npm run lint"
+# VALIDATION_TEST="npm test"
+
+# === Python ===
+# VALIDATION_TYPE_CHECK="mypy src/"
+# VALIDATION_LINT="ruff check ."
+# VALIDATION_TEST="pytest"
+
+# === Ruby ===
+# VALIDATION_TYPE_CHECK="ruby -c **/*.rb"
+# VALIDATION_LINT="rubocop"
+# VALIDATION_TEST="rspec"
+
+# === Go ===
+# VALIDATION_TYPE_CHECK="go vet ./..."
+# VALIDATION_LINT="golangci-lint run"
+# VALIDATION_TEST="go test ./..."
+
+# === Rust ===
+# VALIDATION_TYPE_CHECK="cargo check"
+# VALIDATION_LINT="cargo clippy"
+# VALIDATION_TEST="cargo test"
+
+# === Java/Maven ===
+# VALIDATION_TYPE_CHECK="mvn compile"
+# VALIDATION_LINT="mvn checkstyle:check"
+# VALIDATION_TEST="mvn test"
+
+# === PHP ===
+# VALIDATION_TYPE_CHECK="php -l **/*.php"
+# VALIDATION_LINT="phpcs"
+# VALIDATION_TEST="phpunit"

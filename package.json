@@ -1,0 +1,37 @@
+{
+  "name": "aishore",
+  "version": "0.1.0",
+  "description": "AI-driven development process orchestrator for Claude Code",
+  "private": true,
+  "//": "NOTE: This package.json is optional. Users can invoke scripts directly (./scripts/aishore.sh) without npm/Node.js. This file provides convenience wrappers for Node.js projects.",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "aishore": "./scripts/aishore.sh",
+    "aishore:quick": "./scripts/aishore.sh --quick",
+    "aishore:review": "./scripts/aishore.sh --review",
+    "aishore:full": "./scripts/aishore.sh --full",
+    "aishore:groom": "./scripts/aishore.sh --groom",
+    "aishore:batch": "./scripts/aishore.sh --batch",
+    "aishore:batch:10": "./scripts/aishore.sh --batch 10",
+    "metrics": "./scripts/metrics.sh"
+  },
+  "keywords": [
+    "ai",
+    "automation",
+    "development",
+    "orchestration",
+    "claude",
+    "agents",
+    "backlog",
+    "sprints"
+  ],
+  "author": "Simon Plant",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/simonplant/aiShore.git"
+  },
+  "devDependencies": {}
+}

@@ -40,16 +40,16 @@ Examples:
 ### Step 1: Pre-Flight Check (unless skipped)
 
 ```bash
-# Check Docker containers
-docker ps --format "{{.Names}}" | grep -E "(postgres|redis)" || echo "CONTAINERS_DOWN"
-
-# Check validation
-npm run type-check
-npm run lint
-npm test
+# Check validation commands (configured in .aishore.config)
+$VALIDATION_TYPE_CHECK
+$VALIDATION_LINT
+$VALIDATION_TEST
 
 # Check working tree
 git status --porcelain
+
+# Optional: Check services if configured
+$PREFLIGHT_SERVICES
 ```
 
 If any check fails, output:
@@ -375,9 +375,9 @@ The approach has fundamental issues:
 ### Step 1: Final Validation
 
 ```bash
-npm run type-check
-npm run lint
-npm test
+$VALIDATION_TYPE_CHECK
+$VALIDATION_LINT
+$VALIDATION_TEST
 ```
 
 ### Step 2: Calculate Metrics

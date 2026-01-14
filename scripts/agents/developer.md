@@ -61,13 +61,20 @@ You will be given an item ID. Find it in sprint-current.json and get full detail
 
 ### 5. Validate Your Work
 
+Run your project's validation commands (configured in `.aishore.config`):
+
 ```bash
-npm run type-check
-npm run lint
-npm test
+# Type checking (e.g., TypeScript, MyPy, etc.)
+$VALIDATION_TYPE_CHECK
+
+# Linting (e.g., ESLint, Ruff, Rubocop, etc.)
+$VALIDATION_LINT
+
+# Tests (e.g., Jest, Pytest, RSpec, etc.)
+$VALIDATION_TEST
 ```
 
-All three must pass.
+All validation commands must pass.
 
 ### 6. Stage Your Changes
 

@@ -1,6 +1,6 @@
-# Team Definitions
+# aiShore Definitions
 
-Standard definitions for the AI agent team workflow.
+Standard definitions for the aiShore agent team workflow.
 
 ---
 
@@ -48,14 +48,16 @@ A backlog item is **done** when it meets ALL of the following criteria:
 ### Required Criteria
 
 | #   | Criterion                   | Verified By                        |
-| --- | --------------------------- | ---------------------------------- | ----------- |
-| 1   | **Code Complete**           | All implementation steps completed | Developer   |
-| 2   | **Tests Passing**           | `npm test` passes                  | Validation  |
-| 3   | **Type Check Passing**      | `npm run type-check` passes        | Validation  |
-| 4   | **Lint Passing**            | `npm run lint` passes              | Validation  |
-| 5   | **Code Reviewed**           | Tech Lead approved changes         | Code Review |
-| 6   | **Acceptance Criteria Met** | All AC verified                    | Tester      |
-| 7   | **No Regressions**          | Existing tests still pass          | Validation  |
+| --- | --------------------------- | ---------------------------------- |
+| 1   | **Code Complete**           | All implementation steps completed |
+| 2   | **Tests Passing**           | Test suite passes                  |
+| 3   | **Static Analysis Passing** | Type check/static analysis passes  |
+| 4   | **Lint Passing**            | Code style check passes            |
+| 5   | **Code Reviewed**           | Tech Lead approved changes         |
+| 6   | **Acceptance Criteria Met** | All AC verified                    |
+| 7   | **No Regressions**          | Existing tests still pass          |
+
+**Note**: Validation commands are configured in `.aishore.config` and vary by project (e.g., TypeScript/MyPy for type checking, ESLint/Ruff for linting, Jest/Pytest for testing).
 
 ### Item Fields When Done
 
@@ -277,7 +279,7 @@ Items are **rejected** if:
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
 │  1. START (Tech Lead)                                               │
-│  ✓ Pre-flight: Docker, tests, clean tree                           │
+│  ✓ Pre-flight: validation checks, clean tree                       │
 │  ✓ Item selection: highest priority ready item                      │
 │  ✓ Size estimation: XS/S/M/L/XL                                     │
 │  ✓ Quick-groom if no ready items (with --groom flag)                │
@@ -301,9 +303,9 @@ Items are **rejected** if:
                               ↓
 ┌─────────────────────────────────────────────────────────────────────┐
 │  4. VALIDATE (Validator)                                            │
-│  ✓ npm run type-check                                               │
-│  ✓ npm run lint                                                     │
-│  ✓ npm test                                                         │
+│  ✓ Run type check/static analysis                                   │
+│  ✓ Run linter/code style check                                     │
+│  ✓ Run test suite                                                   │
 │  ✓ All acceptance criteria met                                      │
 │  ✓ Update backlog on pass                                           │
 └─────────────────────────────────────────────────────────────────────┘
