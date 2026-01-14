@@ -1,0 +1,52 @@
+{
+  "description": "Growth Items - Post-Launch Features",
+  "priority": "should",
+  "items": [
+    {
+      "id": "G1-001",
+      "category": "feature",
+      "description": "Export functionality",
+      "phase": 2,
+      "useCase": null,
+      "priority": "should",
+      "steps": [
+        "Implement CSV export",
+        "Implement PDF export",
+        "Add export options UI",
+        "Test export formats"
+      ],
+      "passes": false,
+      "dependencies": [],
+      "acceptanceCriteria": [
+        "Users can export data as CSV",
+        "Users can export data as PDF",
+        "Export includes all relevant data",
+        "Exports are formatted correctly"
+      ],
+      "status": "todo"
+    },
+    {
+      "id": "G1-002",
+      "category": "integration",
+      "description": "Third-party API integration",
+      "phase": 2,
+      "useCase": null,
+      "priority": "should",
+      "steps": [
+        "Research API options",
+        "Implement authentication",
+        "Create integration service",
+        "Add error handling"
+      ],
+      "passes": false,
+      "dependencies": [],
+      "acceptanceCriteria": [
+        "Integration authenticates correctly",
+        "Data syncs successfully",
+        "Errors are handled gracefully",
+        "Users can configure integration"
+      ],
+      "status": "todo"
+    }
+  ]
+}

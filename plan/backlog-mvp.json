@@ -1,0 +1,77 @@
+{
+  "description": "MVP Items - Must Have for Launch",
+  "priority": "must",
+  "items": [
+    {
+      "id": "F1-001",
+      "category": "foundation",
+      "description": "Project scaffolding - Next.js with App Router, TypeScript, Tailwind",
+      "phase": 1,
+      "useCase": null,
+      "priority": "must",
+      "steps": [
+        "Initialize Next.js project with TypeScript",
+        "Configure Tailwind CSS",
+        "Set up project directory structure",
+        "Configure ESLint and Prettier",
+        "Create base layout component"
+      ],
+      "passes": false,
+      "dependencies": [],
+      "acceptanceCriteria": [
+        "Next.js app compiles and runs without errors",
+        "TypeScript strict mode is enabled",
+        "Tailwind CSS is configured and working",
+        "Project structure follows conventions",
+        "ESLint and Prettier configurations are applied"
+      ],
+      "status": "todo"
+    },
+    {
+      "id": "F1-002",
+      "category": "foundation",
+      "description": "Database setup and schema",
+      "phase": 1,
+      "useCase": null,
+      "priority": "must",
+      "steps": [
+        "Set up database (PostgreSQL, SQLite, etc.)",
+        "Define core schema",
+        "Create migration system",
+        "Add database connection handling"
+      ],
+      "passes": false,
+      "dependencies": ["F1-001"],
+      "acceptanceCriteria": [
+        "Database initializes successfully",
+        "Schema includes required tables",
+        "Migrations execute correctly",
+        "Connection handling is robust"
+      ],
+      "status": "todo"
+    },
+    {
+      "id": "F1-003",
+      "category": "foundation",
+      "description": "Authentication system",
+      "phase": 1,
+      "useCase": null,
+      "priority": "must",
+      "steps": [
+        "Implement user registration",
+        "Implement login/logout",
+        "Add session management",
+        "Secure API routes"
+      ],
+      "passes": false,
+      "dependencies": ["F1-002"],
+      "acceptanceCriteria": [
+        "Users can register and login",
+        "Sessions are securely managed",
+        "API routes require authentication",
+        "Users can only access their own data"
+      ],
+      "status": "todo"
+    }
+  ]
+}

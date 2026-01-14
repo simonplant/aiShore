@@ -1,0 +1,136 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Backlog File Schema",
+  "description": "Schema for backlog JSON files used by aiShore",
+  "type": "object",
+  "required": ["description", "priority", "items"],
+  "properties": {
+    "description": {
+      "type": "string",
+      "description": "Human-readable description of this backlog file"
+    },
+    "priority": {
+      "type": "string",
+      "enum": ["must", "should", "could", "future"],
+      "description": "Priority level for items in this backlog file"
+    },
+    "items": {
+      "type": "array",
+      "description": "Array of backlog items",
+      "items": {
+        "type": "object",
+        "required": ["id", "description", "priority", "steps", "acceptanceCriteria"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Unique identifier for the backlog item (e.g., 'F1-001', 'UI-042')",
+            "pattern": "^[A-Z0-9]+-[0-9]+$"
+          },
+          "category": {
+            "type": "string",
+            "description": "Category grouping for the item (e.g., 'foundation', 'ui', 'data')"
+          },
+          "description": {
+            "type": "string",
+            "description": "Clear description of what needs to be built"
+          },
+          "phase": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Development phase number (optional)"
+          },
+          "useCase": {
+            "type": ["string", "null"],
+            "description": "Related use case identifier (optional)"
+          },
+          "priority": {
+            "type": "string",
+            "enum": ["must", "should", "could", "future"],
+            "description": "Priority level (should match file priority)"
+          },
+          "steps": {
+            "type": "array",
+            "description": "Implementation steps to complete this item",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1
+          },
+          "acceptanceCriteria": {
+            "type": "array",
+            "description": "Testable acceptance criteria that define 'done'",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 3
+          },
+          "dependencies": {
+            "type": "array",
+            "description": "Array of item IDs that must be completed first",
+            "items": {
+              "type": "string",
+              "pattern": "^[A-Z0-9]+-[0-9]+$"
+            },
+            "default": []
+          },
+          "status": {
+            "type": "string",
+            "enum": ["todo", "in_progress", "done", "archived"],
+            "default": "todo",
+            "description": "Current status of the item"
+          },
+          "passes": {
+            "type": "boolean",
+            "description": "Whether this item has passed validation (for dependency checking)",
+            "default": false
+          },
+          "readyForSprint": {
+            "type": "boolean",
+            "description": "Whether this item is ready to be selected for a sprint",
+            "default": false
+          },
+          "groomedAt": {
+            "type": ["string", "null"],
+            "format": "date",
+            "description": "ISO date when item was last groomed (YYYY-MM-DD)"
+          },
+          "selectedAt": {
+            "type": ["string", "null"],
+            "format": "date-time",
+            "description": "ISO timestamp when item was selected for a sprint"
+          },
+          "startedAt": {
+            "type": ["string", "null"],
+            "format": "date-time",
+            "description": "ISO timestamp when work on item started"
+          },
+          "completedAt": {
+            "type": ["string", "null"],
+            "format": "date-time",
+            "description": "ISO timestamp when item was completed"
+          },
+          "cycleTimeMinutes": {
+            "type": ["integer", "null"],
+            "description": "Time in minutes from start to completion"
+          },
+          "attempts": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0,
+            "description": "Number of attempts to complete this item"
+          },
+          "maxAttempts": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 2,
+            "description": "Maximum number of attempts allowed"
+          },
+          "rejectionNotes": {
+            "type": ["string", "null"],
+            "description": "Notes from code review if item was rejected"
+          }
+        }
+      }
+    }
+  }
+}

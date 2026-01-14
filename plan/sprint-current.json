@@ -1,0 +1,28 @@
+{
+  "sprintId": "sprint-001",
+  "startedAt": "2026-01-13T20:05:00Z",
+  "completedAt": null,
+  "status": "in_progress",
+  "goal": "Example sprint goal - implement core feature",
+  "item": {
+    "id": "F1-001",
+    "title": "Project scaffolding",
+    "size": "M",
+    "status": "in_progress",
+    "attempts": 0,
+    "maxAttempts": 2,
+    "rejectionNotes": null,
+    "selectedAt": "2026-01-13T20:05:00Z",
+    "startedAt": "2026-01-13T20:05:00Z",
+    "completedAt": null,
+    "cycleTimeMinutes": null
+  },
+  "flow": [
+    "start",
+    "implement",
+    "review",
+    "validate",
+    "close"
+  ],
+  "notes": "Example sprint configuration. Copy this structure when starting a new sprint."
+}

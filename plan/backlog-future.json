@@ -1,0 +1,29 @@
+{
+  "description": "Future Items - Long-Term Roadmap",
+  "priority": "future",
+  "items": [
+    {
+      "id": "FU-001",
+      "category": "feature",
+      "description": "Advanced analytics dashboard",
+      "phase": 4,
+      "useCase": null,
+      "priority": "future",
+      "steps": [
+        "Design analytics schema",
+        "Implement data aggregation",
+        "Build dashboard UI",
+        "Add visualization components"
+      ],
+      "passes": false,
+      "dependencies": [],
+      "acceptanceCriteria": [
+        "Dashboard displays key metrics",
+        "Data updates in real-time",
+        "Visualizations are clear",
+        "Performance is acceptable"
+      ],
+      "status": "todo"
+    }
+  ]
+}
