@@ -316,15 +316,14 @@ show_summary() {
     echo ""
 
     if [[ -d "$OLD_DIR" ]]; then
+        echo ""
         warn "Old aishore/ directory still exists"
         echo ""
-        read -p "Delete old aishore/ directory? [y/N] " response
-        if [[ "$response" =~ ^[Yy]$ ]]; then
-            rm -rf "$OLD_DIR"
-            success "Deleted old aishore/ directory"
-        else
-            echo "You can delete it later: rm -rf $OLD_DIR"
-        fi
+        echo "After verifying the migration works:"
+        echo "  1. Test: .aishore/aishore help"
+        echo "  2. Test: .aishore/aishore metrics"
+        echo "  3. Delete old: rm -rf aishore/"
+        echo "  4. Commit: git add -A && git commit -m 'chore: migrate to .aishore structure'"
     fi
 }
 
