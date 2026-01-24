@@ -1,0 +1,23 @@
+{
+  "description": "Feature backlog - Product Owner owns priority",
+  "items": [
+    {
+      "id": "FEAT-001",
+      "title": "Example feature",
+      "description": "Description of what this feature does for the user",
+      "priority": "should",
+      "category": "core",
+      "steps": [
+        "Step 1: Implement the feature",
+        "Step 2: Add tests"
+      ],
+      "acceptanceCriteria": [
+        "User can perform the action",
+        "Tests pass"
+      ],
+      "status": "todo",
+      "passes": false,
+      "readyForSprint": false
+    }
+  ]
+}

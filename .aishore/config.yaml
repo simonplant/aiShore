@@ -1,0 +1,33 @@
+# aishore configuration
+# All settings for the AI sprint runner
+
+project:
+  name: "My Project"
+
+validation:
+  # Command to validate code (tests, linting, type checking)
+  # Examples:
+  #   Node.js: "npm run type-check && npm run lint && npm test"
+  #   Python:  "pytest && mypy . && ruff check ."
+  #   Go:      "go test ./... && go vet ./..."
+  #   Rust:    "cargo test && cargo clippy"
+  command: "echo 'Configure validation in .aishore/config.yaml'"
+  timeout: 120
+
+models:
+  # Primary model for developer, architect, tech-lead agents
+  primary: "claude-opus-4-5-20251101"
+  # Fast model for validator agent
+  fast: "claude-sonnet-4-20250514"
+
+agent:
+  # Timeout for agent execution (seconds)
+  timeout: 600
+
+context:
+  # Path to project conventions doc (relative to .aishore/ or absolute)
+  # Agents read this to understand code style, patterns, architecture
+  project: "context/project.md"
+
+  # Path to product vision doc (optional, used by product-owner agent)
+  # product: "context/product.md"
