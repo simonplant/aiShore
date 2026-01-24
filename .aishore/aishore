@@ -13,7 +13,9 @@
 #   init            Initialize aishore in current project
 #   help            Show this help
 
-set -e
+set -euo pipefail
+
+AISHORE_VERSION="1.0.0"
 
 # ============================================================================
 # PATHS (relative to .aishore/)
@@ -524,7 +526,7 @@ CRITICAL: End with: <<SIGNAL:ARCHITECT_REVIEW_COMPLETE>>"
 
 cmd_metrics() {
     local json_output=false
-    [[ "$1" == "--json" ]] && json_output=true
+    [[ "${1:-}" == "--json" ]] && json_output=true
 
     load_config
 
@@ -657,9 +659,13 @@ EOF
     echo "  5. Run: .aishore/aishore run"
 }
 
+cmd_version() {
+    echo "aishore version $AISHORE_VERSION"
+}
+
 cmd_help() {
-    cat << 'EOF'
-aishore - AI Sprint Runner
+    cat << EOF
+aishore - AI Sprint Runner (v$AISHORE_VERSION)
 
 Usage: .aishore/aishore <command> [options]
 
@@ -679,6 +685,7 @@ Commands:
 
   init              Initialize aishore in current project
 
+  version           Show version
   help              Show this help
 
 Examples:
@@ -715,6 +722,7 @@ main() {
         review)  cmd_review "$@" ;;
         metrics) cmd_metrics "$@" ;;
         init)    cmd_init "$@" ;;
+        version|-v|--version) cmd_version ;;
         help|-h|--help) cmd_help ;;
         *)
             log_error "Unknown command: $cmd"

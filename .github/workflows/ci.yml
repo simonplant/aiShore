@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  shellcheck:
+    name: Shellcheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run ShellCheck
+        uses: ludeeus/action-shellcheck@master
+        with:
+          scandir: '.aishore'
+          severity: warning
+
+  test:
+    name: Basic Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq
+
+      - name: Check script is executable
+        run: test -x .aishore/aishore
+
+      - name: Test help command
+        run: .aishore/aishore help
+
+      - name: Test version command
+        run: .aishore/aishore version
+
+      - name: Test metrics command
+        run: .aishore/aishore metrics
+
+      - name: Validate JSON files
+        run: |
+          jq empty .aishore/plan/backlog.json
+          jq empty .aishore/plan/bugs.json
+          jq empty .aishore/plan/icebox.json
+          jq empty .aishore/plan/sprint.json
+
+  macos:
+    name: macOS Compatibility
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: brew install jq coreutils
+
+      - name: Test help command
+        run: .aishore/aishore help
+
+      - name: Test version command
+        run: .aishore/aishore version

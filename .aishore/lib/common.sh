@@ -227,12 +227,20 @@ run_with_timeout() {
     local timeout_secs="$1"
     shift
 
+    # Linux: timeout, macOS: gtimeout (from coreutils)
+    local timeout_cmd=""
     if command -v timeout &> /dev/null; then
-        timeout --signal=TERM --kill-after=30 "$timeout_secs" "$@"
+        timeout_cmd="timeout"
+    elif command -v gtimeout &> /dev/null; then
+        timeout_cmd="gtimeout"
+    fi
+
+    if [[ -n "$timeout_cmd" ]]; then
+        "$timeout_cmd" --signal=TERM --kill-after=30 "$timeout_secs" "$@"
         return $?
     fi
 
-    log_warning "timeout command not available"
+    log_warning "timeout command not available (install coreutils on macOS: brew install coreutils)"
     "$@"
 }
 
