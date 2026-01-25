@@ -6,7 +6,7 @@ Thanks for your interest in contributing to aishore!
 
 ```bash
 # Clone the repo
-git clone https://github.com/yourusername/aishore.git
+git clone https://github.com/simonplant/aishore.git
 cd aishore
 
 # The tool is ready to use - no build step needed
@@ -42,7 +42,7 @@ Before submitting a PR:
 
 ```bash
 # Run shellcheck
-shellcheck .aishore/aishore .aishore/lib/common.sh
+shellcheck .aishore/aishore
 
 # Test basic commands
 .aishore/aishore help
@@ -50,7 +50,7 @@ shellcheck .aishore/aishore .aishore/lib/common.sh
 .aishore/aishore metrics
 
 # Validate JSON
-jq empty .aishore/plan/*.json
+jq empty backlog/*.json
 ```
 
 ## Pull Request Process
@@ -76,20 +76,25 @@ We use [Conventional Commits](https://www.conventionalcommits.org/):
 ## Architecture
 
 ```
-.aishore/
-├── aishore           # Main CLI entry point
-├── config.yaml       # User configuration
-├── lib/common.sh     # Shared utilities
-├── agents/*.md       # Agent prompts
-├── plan/*.json       # Backlog data
-└── data/             # Runtime data
+project/
+├── backlog/              # User content (version controlled by user)
+│   ├── backlog.json
+│   ├── bugs.json
+│   └── sprint.json
+└── .aishore/             # Tool (this is what gets updated)
+    ├── aishore           # Self-contained CLI
+    ├── agents/*.md       # Agent prompts
+    ├── config.yaml       # Optional overrides
+    └── data/             # Runtime data
 ```
 
 Key design decisions:
 
-- **Single CLI**: All commands through one entry point
-- **Config-driven**: All settings in config.yaml
-- **Self-contained**: Everything in `.aishore/` directory
+- **Separation of concerns**: Tool (`.aishore/`) vs user content (`backlog/`)
+- **Single file CLI**: All logic in one self-contained script
+- **Sensible defaults**: Config is optional, env vars for overrides
+- **Auto-detect context**: Finds CLAUDE.md automatically
+- **Self-updating**: `update` command fetches latest from upstream
 - **Completion contract**: Agents write to result.json
 
 ## Questions?

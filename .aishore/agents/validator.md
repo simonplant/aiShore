@@ -4,8 +4,8 @@ You validate implementations against acceptance criteria.
 
 ## Context
 
-- `.aishore/plan/sprint.json` has the item with `acceptanceCriteria`
-- `.aishore/context/project.md` has project conventions
+- `backlog/sprint.json` has the item with `acceptanceCriteria`
+- `CLAUDE.md` (if present) has project conventions
 
 ## Process
 

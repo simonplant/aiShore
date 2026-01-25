@@ -7,29 +7,27 @@ Drop `.aishore/` into any project to get automated sprint execution.
 ## Quick Start
 
 ```bash
-# Initialize (creates config, sets up directories)
+# Initialize
 .aishore/aishore init
 
-# Configure validation command
-# Edit .aishore/config.yaml
-
-# Add project context
-# Edit .aishore/context/project.md (or symlink to CLAUDE.md)
-
 # Add features to backlog
-# Edit .aishore/plan/backlog.json
+vim backlog/backlog.json
 
 # Groom items for sprint
 .aishore/aishore groom
 
 # Run a sprint
 .aishore/aishore run
+
+# Run specific item by ID
+.aishore/aishore run FEAT-001
 ```
 
 ## Commands
 
 ```bash
 .aishore/aishore run [count]      # Run sprints (default: 1)
+.aishore/aishore run TEST-006     # Run specific item by ID
 .aishore/aishore run --auto-commit 5   # Run 5 sprints with auto-commit
 
 .aishore/aishore groom            # Groom bugs/tech debt (Tech Lead)
@@ -41,6 +39,9 @@ Drop `.aishore/` into any project to get automated sprint execution.
 .aishore/aishore metrics          # Show sprint metrics
 .aishore/aishore metrics --json   # Output as JSON
 
+.aishore/aishore update           # Update from upstream
+.aishore/aishore update --dry-run # Check for updates
+
 .aishore/aishore init             # Initialize in new project
 .aishore/aishore help             # Show help
 ```
@@ -48,34 +49,30 @@ Drop `.aishore/` into any project to get automated sprint execution.
 ## Directory Structure
 
 ```
-.aishore/
-├── aishore              # CLI entry point
-├── config.yaml          # All configuration
-├── context/
-│   └── project.md       # Project conventions (read by agents)
-├── agents/
-│   ├── developer.md     # Implements features
-│   ├── validator.md     # Validates implementations
-│   ├── tech-lead.md     # Grooms bugs, marks ready
-│   ├── architect.md     # Architecture reviews
-│   └── product-owner.md # Product direction
-├── plan/
-│   ├── backlog.json     # Feature backlog
-│   ├── bugs.json        # Tech debt backlog
-│   ├── icebox.json      # Future ideas
-│   ├── sprint.json      # Current sprint state
-│   └── definitions.md   # DoR, DoD, sizing
-├── data/
-│   ├── archive/         # Sprint history (sprints.jsonl)
-│   ├── logs/            # Agent execution logs
-│   └── status/          # Agent completion signals
-└── lib/
-    └── common.sh        # Shared utilities
+project/
+├── backlog/                 # YOUR CONTENT (version controlled)
+│   ├── backlog.json         # Feature backlog
+│   ├── bugs.json            # Tech debt backlog
+│   ├── sprint.json          # Current sprint state
+│   └── archive/             # Completed sprint history
+├── CLAUDE.md                # Project context (auto-detected)
+└── .aishore/                # TOOL (can be updated/replaced)
+    ├── aishore              # Self-contained CLI
+    ├── config.yaml          # Optional overrides
+    ├── agents/              # Agent prompts
+    └── data/                # Runtime (logs, status)
 ```
 
-## Configuration
+**Key insight:** Your backlogs are at project level, separate from the tool. You can safely update or replace `.aishore/` without losing your content.
 
-Edit `.aishore/config.yaml`:
+## Context
+
+aishore auto-detects `CLAUDE.md` in your project root and passes it to agents.
+No configuration needed - just have a `CLAUDE.md` file.
+
+## Configuration (Optional)
+
+Edit `.aishore/config.yaml` only if you need to override defaults:
 
 ```yaml
 validation:
@@ -86,8 +83,14 @@ models:
   primary: "claude-opus-4-5-20251101"
   fast: "claude-sonnet-4-20250514"
 
-context:
-  project: "context/project.md"
+agent:
+  timeout: 3600
+```
+
+Or use environment variables:
+```bash
+export AISHORE_MODEL_PRIMARY="claude-opus-4-5-20251101"
+export AISHORE_AGENT_TIMEOUT=3600
 ```
 
 ## Sprint Flow
@@ -98,7 +101,7 @@ Pick Item → Developer → Validator → Done
 backlog    implement    validate   archive
 ```
 
-1. **Pick**: Select first item with `readyForSprint: true`
+1. **Pick**: Select first item with `readyForSprint: true` (or specific ID)
 2. **Developer**: Implements the feature
 3. **Validator**: Runs validation, checks acceptance criteria
 4. **Done**: Item marked complete, archived
@@ -109,12 +112,6 @@ Agents signal completion by writing to `.aishore/data/status/result.json`:
 
 ```json
 {"status": "pass", "summary": "implemented feature X"}
-```
-
-or
-
-```json
-{"status": "fail", "reason": "tests failing in module Y"}
 ```
 
 ## Requirements
@@ -129,16 +126,19 @@ or
 Copy `.aishore/` directory to your project root:
 
 ```bash
-# Copy the directory
 cp -r .aishore /path/to/your/project/
-
-# Add gitignore entries to your project
 cat .aishore/gitignore-entries.txt >> /path/to/your/project/.gitignore
-
-# Initialize
-cd /path/to/your/project
-.aishore/aishore init
+cd /path/to/your/project && .aishore/aishore init
 ```
+
+## Keeping Updated
+
+```bash
+.aishore/aishore update --dry-run  # Check for updates
+.aishore/aishore update            # Update from upstream
+```
+
+Updates fetch the latest script and agent prompts. Your `backlog/` and `config.yaml` are never modified.
 
 ## Backlog Format
 

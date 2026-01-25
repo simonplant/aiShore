@@ -7,20 +7,18 @@
 **Copy only the `.aishore/` directory** to your target project:
 
 ```bash
-# From this repository
 cp -r .aishore /path/to/your/project/
-
-# Add gitignore entries to your project's .gitignore
 cat .aishore/gitignore-entries.txt >> /path/to/your/project/.gitignore
+cd /path/to/your/project && .aishore/aishore init
 ```
 
-> **Note:** Do NOT copy the root-level files (README.md, LICENSE, etc.) - those are for this repository only. The `.aishore/` directory is self-contained.
+> **Note:** Do NOT copy root-level files (README.md, LICENSE, etc.) - those are for this repository only.
 
 ## What It Does
 
 aishore runs sprints autonomously:
 
-1. **Picks** the next ready item from your backlog
+1. **Picks** the next ready item from your backlog (or a specific ID)
 2. **Developer agent** implements the feature
 3. **Validator agent** runs tests and checks acceptance criteria
 4. **Archives** completed work
@@ -31,45 +29,63 @@ Pick Item → Developer → Validator → Done
 
 ## Quick Start
 
-After copying `.aishore/` to your project:
-
 ```bash
 cd /path/to/your/project
 
-# Initialize
+# Initialize (creates backlog/ directory)
 .aishore/aishore init
 
-# Configure validation command for your stack
-vim .aishore/config.yaml
-
-# Add your project context
-ln -sf ../CLAUDE.md .aishore/context/project.md
-
 # Add features to backlog
-vim .aishore/plan/backlog.json
+vim backlog/backlog.json
 
 # Groom items (marks them ready)
 .aishore/aishore groom
 
 # Run a sprint
 .aishore/aishore run
+
+# Or run a specific item
+.aishore/aishore run FEAT-001
 ```
+
+aishore auto-detects `CLAUDE.md` in your project root - no configuration needed.
 
 ## Commands
 
 | Command | Description |
 |---------|-------------|
 | `run [N]` | Run N sprints (default: 1) |
+| `run <ID>` | Run specific item by ID (e.g., TEST-006) |
 | `run --auto-commit` | Auto-commit after each sprint |
 | `groom` | Groom bugs/tech debt (Tech Lead) |
 | `groom --backlog` | Groom features (Product Owner) |
 | `review` | Architecture review |
 | `metrics` | Show sprint metrics |
+| `update` | Update aishore from upstream |
 | `init` | Initialize in new project |
 
-## Configuration
+## Project Structure
 
-Edit `.aishore/config.yaml`:
+```
+your-project/
+├── backlog/                 # YOUR CONTENT (version controlled)
+│   ├── backlog.json         # Feature backlog
+│   ├── bugs.json            # Tech debt backlog
+│   ├── sprint.json          # Current sprint state
+│   └── archive/             # Completed sprint history
+├── CLAUDE.md                # Project context (auto-detected)
+└── .aishore/                # TOOL (can be updated/replaced)
+    ├── aishore              # Self-contained CLI
+    ├── config.yaml          # Optional overrides
+    ├── agents/              # Agent prompts
+    └── data/                # Runtime (logs, status)
+```
+
+**Key design:** Your backlogs (`backlog/`) are separate from the tool (`.aishore/`). You can safely update or replace `.aishore/` without losing your content.
+
+## Configuration (Optional)
+
+Edit `.aishore/config.yaml` only if you need to override defaults:
 
 ```yaml
 validation:
@@ -79,7 +95,12 @@ validation:
 models:
   primary: "claude-opus-4-5-20251101"
   fast: "claude-sonnet-4-20250514"
+
+agent:
+  timeout: 3600
 ```
+
+Or use environment variables: `AISHORE_MODEL_PRIMARY`, `AISHORE_MODEL_FAST`, `AISHORE_AGENT_TIMEOUT`
 
 ## Requirements
 
@@ -88,24 +109,14 @@ models:
 - `bash` 4.4+
 - `git`
 
-## Repository Structure
+## Keeping Updated
 
+```bash
+.aishore/aishore update --dry-run  # Check for updates
+.aishore/aishore update            # Update from upstream
 ```
-aishore/                    ← This repository
-├── .aishore/               ← COPY THIS to target projects
-│   ├── aishore             # CLI
-│   ├── config.yaml         # Settings (customize)
-│   ├── context/            # Project docs (you provide)
-│   ├── agents/             # AI agent prompts
-│   ├── plan/               # Backlogs
-│   ├── data/               # Runtime (logs, archive)
-│   └── lib/                # Utilities
-├── README.md               ← You are here (don't copy)
-├── LICENSE                 ← Tool license (don't copy)
-├── CHANGELOG.md            ← Version history (don't copy)
-├── CONTRIBUTING.md         ← For contributors (don't copy)
-└── migrate.sh              ← Migration helper (don't copy)
-```
+
+Updates fetch the latest script and agent prompts. Your `backlog/` and `config.yaml` are never modified.
 
 ## How It Works
 

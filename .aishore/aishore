@@ -5,7 +5,7 @@
 # Usage: .aishore/aishore <command> [options]
 #
 # Commands:
-#   run [count]     Run sprints (default: 1)
+#   run [count|ID]  Run sprints (default: 1) or specific item by ID
 #   groom           Groom bugs/tech debt (Tech Lead)
 #   groom --backlog Groom features (Product Owner)
 #   review          Architecture review
@@ -15,73 +15,108 @@
 
 set -euo pipefail
 
-AISHORE_VERSION="1.0.0"
+AISHORE_VERSION="1.2.0"
 
 # ============================================================================
-# PATHS (relative to .aishore/)
+# PATHS
 # ============================================================================
 
 AISHORE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$AISHORE_ROOT")"
-CONFIG_FILE="$AISHORE_ROOT/config.yaml"
-PLAN_DIR="$AISHORE_ROOT/plan"
-DATA_DIR="$AISHORE_ROOT/data"
-AGENTS_DIR="$AISHORE_ROOT/agents"
-CONTEXT_DIR="$AISHORE_ROOT/context"
-LIB_DIR="$AISHORE_ROOT/lib"
 
-# Runtime directories
+# Tool paths (in .aishore/ - can be updated)
+CONFIG_FILE="$AISHORE_ROOT/config.yaml"
+AGENTS_DIR="$AISHORE_ROOT/agents"
+DATA_DIR="$AISHORE_ROOT/data"
 STATUS_DIR="$DATA_DIR/status"
 LOGS_DIR="$DATA_DIR/logs"
-ARCHIVE_DIR="$DATA_DIR/archive"
 
-# Source library
-source "$LIB_DIR/common.sh"
+# User content paths (at project level - never touched by update)
+BACKLOG_DIR="$PROJECT_ROOT/backlog"
+ARCHIVE_DIR="$BACKLOG_DIR/archive"
 
 # ============================================================================
-# CONFIGURATION LOADING
+# DEFAULTS (can be overridden by config.yaml or env vars)
+# ============================================================================
+
+MODEL_PRIMARY="${AISHORE_MODEL_PRIMARY:-claude-opus-4-5-20251101}"
+MODEL_FAST="${AISHORE_MODEL_FAST:-claude-sonnet-4-20250514}"
+AGENT_TIMEOUT="${AISHORE_AGENT_TIMEOUT:-3600}"
+VALIDATE_CMD="${AISHORE_VALIDATE_CMD:-}"
+VALIDATE_TIMEOUT="${AISHORE_VALIDATE_TIMEOUT:-120}"
+
+# ============================================================================
+# COLORS & LOGGING (inlined from common.sh)
+# ============================================================================
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+MAGENTA='\033[0;35m'
+NC='\033[0m'
+
+log_header()  { echo -e "\n${BLUE}════════════════════════════════════════${NC}\n${BLUE}  $1${NC}\n${BLUE}════════════════════════════════════════${NC}"; }
+log_subheader() { echo -e "\n${CYAN}─── $1 ───${NC}"; }
+log_success() { echo -e "${GREEN}✓ $1${NC}"; }
+log_warning() { echo -e "${YELLOW}⚠ $1${NC}"; }
+log_error()   { echo -e "${RED}✗ $1${NC}"; }
+log_info()    { echo -e "${CYAN}$1${NC}"; }
+log_agent()   { echo -e "${MAGENTA}[$1]${NC} $2"; }
+
+# ============================================================================
+# UTILITIES (inlined from common.sh)
+# ============================================================================
+
+iso_timestamp() { date -Iseconds; }
+
+append_log() {
+    local file="$1" msg="$2"
+    mkdir -p "$(dirname "$file")" 2>/dev/null || true
+    echo "$msg" >> "$file"
+}
+
+check_signal() {
+    local signal_name="$1"
+    local output_file="$2"
+    [[ ! -s "$output_file" ]] && return 1
+    grep -qE "<<[[:space:]]*SIGNAL[[:space:]]*:[[:space:]]*${signal_name}[[:space:]]*>>" "$output_file" 2>/dev/null
+}
+
+# ============================================================================
+# AUTO-DETECT CLAUDE.MD
+# ============================================================================
+
+find_claude_md() {
+    local dir="$PROJECT_ROOT"
+    # Check common locations
+    for path in "$dir/CLAUDE.md" "$dir/claude.md" "$dir/docs/CLAUDE.md"; do
+        [[ -f "$path" ]] && { echo "$path"; return 0; }
+    done
+    return 1
+}
+
+# ============================================================================
+# CONFIGURATION (optional config.yaml, sensible defaults)
 # ============================================================================
 
 load_config() {
-    if [[ ! -f "$CONFIG_FILE" ]]; then
-        log_error "Config not found: $CONFIG_FILE"
-        log_info "Run '.aishore/aishore init' to initialize"
-        exit 1
-    fi
+    # Only load if config exists
+    [[ ! -f "$CONFIG_FILE" ]] && return 0
 
-    # Load config values (uses yq if available, falls back to grep/sed)
     if command -v yq &> /dev/null; then
-        VALIDATE_CMD=$(yq -r '.validation.command // "echo No validation configured"' "$CONFIG_FILE")
+        VALIDATE_CMD=$(yq -r '.validation.command // ""' "$CONFIG_FILE")
         VALIDATE_TIMEOUT=$(yq -r '.validation.timeout // 120' "$CONFIG_FILE")
-        MODEL_PRIMARY=$(yq -r '.models.primary // "claude-opus-4-5-20251101"' "$CONFIG_FILE")
-        MODEL_FAST=$(yq -r '.models.fast // "claude-sonnet-4-20250514"' "$CONFIG_FILE")
-        AGENT_TIMEOUT=$(yq -r '.agent.timeout // 600' "$CONFIG_FILE")
-        CONTEXT_PROJECT=$(yq -r '.context.project // "context/project.md"' "$CONFIG_FILE")
-        CONTEXT_PRODUCT=$(yq -r '.context.product // ""' "$CONFIG_FILE")
+        local cfg_primary=$(yq -r '.models.primary // ""' "$CONFIG_FILE")
+        local cfg_fast=$(yq -r '.models.fast // ""' "$CONFIG_FILE")
+        local cfg_timeout=$(yq -r '.agent.timeout // ""' "$CONFIG_FILE")
+        [[ -n "$cfg_primary" ]] && MODEL_PRIMARY="$cfg_primary"
+        [[ -n "$cfg_fast" ]] && MODEL_FAST="$cfg_fast"
+        [[ -n "$cfg_timeout" ]] && AGENT_TIMEOUT="$cfg_timeout"
     else
-        # Fallback: simple grep-based parsing (works for simple YAML)
-        VALIDATE_CMD=$(grep -E '^\s*command:' "$CONFIG_FILE" | head -1 | sed 's/.*command:\s*//' | tr -d '"' || echo "echo No validation configured")
-        VALIDATE_TIMEOUT=$(grep -E '^\s*timeout:' "$CONFIG_FILE" | head -1 | sed 's/.*timeout:\s*//' || echo "120")
-        MODEL_PRIMARY=$(grep -E '^\s*primary:' "$CONFIG_FILE" | sed 's/.*primary:\s*//' | tr -d '"' || echo "claude-opus-4-5-20251101")
-        MODEL_FAST=$(grep -E '^\s*fast:' "$CONFIG_FILE" | sed 's/.*fast:\s*//' | tr -d '"' || echo "claude-sonnet-4-20250514")
-        AGENT_TIMEOUT=$(grep -E 'timeout:' "$CONFIG_FILE" | tail -1 | sed 's/.*timeout:\s*//' || echo "600")
-        CONTEXT_PROJECT="context/project.md"
-        CONTEXT_PRODUCT=""
-    fi
-
-    # Export for common.sh
-    export AISHORE_VALIDATE_CMD="$VALIDATE_CMD"
-    export AISHORE_TEST_TIMEOUT="$VALIDATE_TIMEOUT"
-    export MODEL_OPUS="$MODEL_PRIMARY"
-    export MODEL_SONNET="$MODEL_FAST"
-    export AISHORE_AGENT_TIMEOUT="$AGENT_TIMEOUT"
-
-    # Resolve context paths
-    if [[ -n "$CONTEXT_PROJECT" && ! "$CONTEXT_PROJECT" =~ ^/ ]]; then
-        CONTEXT_PROJECT="$AISHORE_ROOT/$CONTEXT_PROJECT"
-    fi
-    if [[ -n "$CONTEXT_PRODUCT" && ! "$CONTEXT_PRODUCT" =~ ^/ ]]; then
-        CONTEXT_PRODUCT="$AISHORE_ROOT/$CONTEXT_PRODUCT"
+        # Simple grep fallback for validation command only
+        VALIDATE_CMD=$(grep -E '^\s*command:' "$CONFIG_FILE" 2>/dev/null | head -1 | sed 's/.*command:\s*//' | tr -d '"' || echo "")
     fi
 }
 
@@ -90,40 +125,44 @@ load_config() {
 # ============================================================================
 
 pick_item() {
+    local specific_id="${1:-}"
     local item_json
     local source_file="$STATUS_DIR/.item_source"
 
-    # Try backlog.json first
-    item_json=$(jq -r '
-        [.items[] |
-        select(.readyForSprint == true and (.passes == false or .passes == null) and (.status == "todo" or .status == null)) |
-        . + {_priorityOrder: (if .priority == "must" then 0 elif .priority == "should" then 1 elif .priority == "could" then 2 else 3 end)}] |
-        sort_by(._priorityOrder) |
-        first |
-        if . then {id, title, description, steps, acceptanceCriteria, priority} else empty end
-    ' "$PLAN_DIR/backlog.json" 2>/dev/null)
-
-    if [[ -n "$item_json" && "$item_json" != "null" ]]; then
-        echo "backlog.json" > "$source_file"
-        echo "$item_json"
-        return 0
+    if [[ -n "$specific_id" ]]; then
+        # Pick specific item by ID
+        for backlog in "backlog.json" "bugs.json"; do
+            item_json=$(jq -r --arg id "$specific_id" '
+                .items[] | select(.id == $id) |
+                {id, title, description, steps, acceptanceCriteria, priority}
+            ' "$BACKLOG_DIR/$backlog" 2>/dev/null)
+            if [[ -n "$item_json" && "$item_json" != "null" ]]; then
+                echo "$backlog" > "$source_file"
+                echo "$item_json"
+                return 0
+            fi
+        done
+        log_error "Item not found: $specific_id"
+        return 1
     fi
 
-    # Try bugs.json
-    item_json=$(jq -r '
-        [.items[] |
-        select(.readyForSprint == true and (.passes == false or .passes == null) and (.status == "todo" or .status == null)) |
-        . + {_priorityOrder: (if .priority == "must" then 0 elif .priority == "should" then 1 elif .priority == "could" then 2 else 3 end)}] |
-        sort_by(._priorityOrder) |
-        first |
-        if . then {id, title, description, steps, acceptanceCriteria, priority} else empty end
-    ' "$PLAN_DIR/bugs.json" 2>/dev/null)
+    # Auto-pick: highest priority ready item
+    for backlog in "backlog.json" "bugs.json"; do
+        item_json=$(jq -r '
+            [.items[] |
+            select(.readyForSprint == true and (.passes == false or .passes == null) and (.status == "todo" or .status == null)) |
+            . + {_priorityOrder: (if .priority == "must" then 0 elif .priority == "should" then 1 elif .priority == "could" then 2 else 3 end)}] |
+            sort_by(._priorityOrder) |
+            first |
+            if . then {id, title, description, steps, acceptanceCriteria, priority} else empty end
+        ' "$BACKLOG_DIR/$backlog" 2>/dev/null)
 
-    if [[ -n "$item_json" && "$item_json" != "null" ]]; then
-        echo "bugs.json" > "$source_file"
-        echo "$item_json"
-        return 0
-    fi
+        if [[ -n "$item_json" && "$item_json" != "null" ]]; then
+            echo "$backlog" > "$source_file"
+            echo "$item_json"
+            return 0
+        fi
+    done
 
     return 1
 }
@@ -142,11 +181,10 @@ create_sprint() {
     local source="$2"
     local item_id=$(echo "$item_json" | jq -r '.id')
     local title=$(echo "$item_json" | jq -r '.title // .description')
-    local sprint_num=$(date +%s)
 
-    cat > "$PLAN_DIR/sprint.json" <<EOF
+    cat > "$BACKLOG_DIR/sprint.json" <<EOF
 {
-  "sprintId": "sprint-$sprint_num",
+  "sprintId": "sprint-$(date +%s)",
   "startedAt": "$(date -Iseconds)",
   "status": "in_progress",
   "item": {
@@ -175,8 +213,8 @@ mark_complete() {
     local tmp=$(mktemp)
     if jq --arg id "$item_id" --arg ts "$now" '
         (.items[] | select(.id == $id)) |= . + {passes: true, status: "done", readyForSprint: false, completedAt: $ts}
-    ' "$PLAN_DIR/$source" > "$tmp" 2>/dev/null; then
-        mv "$tmp" "$PLAN_DIR/$source"
+    ' "$BACKLOG_DIR/$source" > "$tmp" 2>/dev/null; then
+        mv "$tmp" "$BACKLOG_DIR/$source"
     else
         rm -f "$tmp"
         log_error "Failed to update $source"
@@ -186,16 +224,16 @@ mark_complete() {
     # Update sprint.json
     tmp=$(mktemp)
     jq --arg ts "$now" '.status = "completed" | .completedAt = $ts | .item.status = "passed" | .item.completedAt = $ts' \
-        "$PLAN_DIR/sprint.json" > "$tmp" && mv "$tmp" "$PLAN_DIR/sprint.json"
+        "$BACKLOG_DIR/sprint.json" > "$tmp" && mv "$tmp" "$BACKLOG_DIR/sprint.json"
 
     # Append to archive
-    local sprint_id=$(jq -r '.sprintId' "$PLAN_DIR/sprint.json")
+    local sprint_id=$(jq -r '.sprintId' "$BACKLOG_DIR/sprint.json")
     echo "{\"date\":\"$(date +%Y-%m-%d)\",\"sprintId\":\"$sprint_id\",\"itemId\":\"$item_id\",\"status\":\"complete\"}" \
         >> "$ARCHIVE_DIR/sprints.jsonl"
 }
 
 reset_sprint() {
-    cat > "$PLAN_DIR/sprint.json" <<'EOF'
+    cat > "$BACKLOG_DIR/sprint.json" <<'EOF'
 {"sprintId": null, "status": "idle", "item": null}
 EOF
 }
@@ -207,18 +245,19 @@ EOF
 run_agent() {
     local agent_name="$1"
     local mode="$2"
+    local model="${3:-$MODEL_PRIMARY}"
 
     local prompt_file="$AGENTS_DIR/${agent_name}.md"
     [[ ! -f "$prompt_file" ]] && { log_error "Agent not found: $agent_name"; return 1; }
 
-    # Clear previous result
     rm -f "$STATUS_DIR/result.json"
 
-    # Build context file list
-    local context_files="@$PLAN_DIR/sprint.json"
-    [[ -f "$CONTEXT_PROJECT" ]] && context_files="$context_files @$CONTEXT_PROJECT"
+    # Build context: sprint.json + auto-detected CLAUDE.md
+    local context_files="@$BACKLOG_DIR/sprint.json"
+    local claude_md=$(find_claude_md)
+    [[ -n "$claude_md" ]] && context_files="$context_files @$claude_md"
 
-    # Build prompt
+    # Build prompt with completion contract
     local prompt=$(cat "$prompt_file")
     prompt="$prompt
 
@@ -240,12 +279,11 @@ On failure:
 
 This file is how the orchestrator knows you finished. Write it as your final action."
 
-    log_info "Running $agent_name ($mode)..."
-
+    log_agent "$agent_name" "Starting (model: $model, timeout: ${AGENT_TIMEOUT}s)"
     local start_time=$(date +%s)
 
     setsid env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT \
-        claude --model "$MODEL_PRIMARY" \
+        claude --model "$model" \
         --permission-mode acceptEdits \
         --allowedTools "Bash(git:*),Edit,Write,Read,Glob,Grep" \
         --output-format text \
@@ -253,12 +291,9 @@ This file is how the orchestrator knows you finished. Write it as your final act
 $prompt" &
 
     local agent_pid=$!
-
-    # Wait for completion
-    local timeout="$AGENT_TIMEOUT"
     local elapsed=0
 
-    while [[ $elapsed -lt $timeout ]]; do
+    while [[ $elapsed -lt $AGENT_TIMEOUT ]]; do
         if ! kill -0 "$agent_pid" 2>/dev/null; then
             break
         fi
@@ -270,9 +305,8 @@ $prompt" &
         elapsed=$((elapsed + 5))
     done
 
-    # Kill if still running
     if kill -0 "$agent_pid" 2>/dev/null; then
-        log_warning "Agent timed out after ${timeout}s, killing..."
+        log_warning "Agent timed out after ${AGENT_TIMEOUT}s, killing..."
         kill -TERM -"$agent_pid" 2>/dev/null || kill -TERM "$agent_pid" 2>/dev/null
         sleep 2
         kill -KILL -"$agent_pid" 2>/dev/null || true
@@ -281,11 +315,10 @@ $prompt" &
     wait "$agent_pid" 2>/dev/null || true
 
     local duration=$(($(date +%s) - start_time))
-    log_info "$agent_name finished in ${duration}s"
+    log_agent "$agent_name" "Completed in ${duration}s"
 
-    # Log to agent-runs.log
     append_log "$LOGS_DIR/agent-runs.log" \
-        "$(iso_timestamp)|$agent_name|$mode|${duration}s|$MODEL_PRIMARY|exit:$?"
+        "$(iso_timestamp)|$agent_name|$mode|${duration}s|$model"
 }
 
 check_result() {
@@ -312,14 +345,22 @@ check_result() {
 # ============================================================================
 
 cmd_run() {
-    local count="${1:-1}"
+    local count=1
     local auto_commit=false
+    local specific_id=""
 
-    # Parse run options
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --auto-commit) auto_commit=true; shift ;;
-            *) [[ "$1" =~ ^[0-9]+$ ]] && count="$1"; shift ;;
+            *)
+                if [[ "$1" =~ ^[0-9]+$ ]]; then
+                    count="$1"
+                else
+                    # Assume it's an item ID (e.g., TEST-006, FEAT-001)
+                    specific_id="$1"
+                    count=1
+                fi
+                shift ;;
         esac
     done
 
@@ -328,7 +369,11 @@ cmd_run() {
 
     log_header "aishore - Sprint Runner"
     echo "Project: $PROJECT_ROOT"
-    echo "Sprints: $count"
+    if [[ -n "$specific_id" ]]; then
+        echo "Item: $specific_id"
+    else
+        echo "Sprints: $count"
+    fi
     [[ "$auto_commit" == "true" ]] && echo "Auto-commit: enabled"
     echo ""
 
@@ -337,10 +382,13 @@ cmd_run() {
     for ((i=1; i<=count; i++)); do
         [[ $count -gt 1 ]] && log_subheader "Sprint $i/$count"
 
-        # Pick item
         local item_json
-        if ! item_json=$(pick_item); then
-            log_warning "No ready items in backlog"
+        if ! item_json=$(pick_item "$specific_id"); then
+            if [[ -n "$specific_id" ]]; then
+                log_error "Item not found: $specific_id"
+            else
+                log_warning "No ready items in backlog"
+            fi
             break
         fi
 
@@ -350,7 +398,7 @@ cmd_run() {
         create_sprint "$item_json" "$item_source"
 
         # Run developer
-        run_agent "developer" "implement"
+        run_agent "developer" "implement" "$MODEL_PRIMARY"
         if ! check_result; then
             log_error "Implementation failed"
             ((failed++)) || true
@@ -361,7 +409,7 @@ cmd_run() {
         fi
 
         # Run validator
-        run_agent "validator" "validate"
+        run_agent "validator" "validate" "$MODEL_FAST"
         if ! check_result; then
             log_error "Validation failed"
             ((failed++)) || true
@@ -404,30 +452,29 @@ Co-Authored-By: Claude <noreply@anthropic.com>"
 }
 
 cmd_groom() {
-    local mode="bugs"  # Default: tech lead grooms bugs
+    local mode="bugs"
     [[ "${1:-}" == "--backlog" ]] && mode="backlog"
 
     load_config
     cd "$PROJECT_ROOT"
 
+    local agent context
     if [[ "$mode" == "backlog" ]]; then
         log_header "Product Owner: Backlog Grooming"
-        local agent="product-owner"
-        local agent_mode="groom"
-        local context="@$PLAN_DIR/backlog.json @$PLAN_DIR/bugs.json"
-        [[ -f "$CONTEXT_PRODUCT" ]] && context="@$CONTEXT_PRODUCT $context"
-        [[ -f "$CONTEXT_PROJECT" ]] && context="$context @$CONTEXT_PROJECT"
+        agent="product-owner"
+        context="@$BACKLOG_DIR/backlog.json @$BACKLOG_DIR/bugs.json"
     else
         log_header "Tech Lead: Bugs/Tech Debt Grooming"
-        local agent="tech-lead"
-        local agent_mode="groom"
-        local context="@$PLAN_DIR/backlog.json @$PLAN_DIR/bugs.json"
-        [[ -f "$CONTEXT_PROJECT" ]] && context="$context @$CONTEXT_PROJECT"
+        agent="tech-lead"
+        context="@$BACKLOG_DIR/backlog.json @$BACKLOG_DIR/bugs.json"
     fi
 
-    # Show current state
-    local ready_backlog=$(jq '[.items[] | select(.readyForSprint == true and .passes != true)] | length' "$PLAN_DIR/backlog.json" 2>/dev/null || echo 0)
-    local ready_bugs=$(jq '[.items[] | select(.readyForSprint == true and .passes != true)] | length' "$PLAN_DIR/bugs.json" 2>/dev/null || echo 0)
+    # Add CLAUDE.md if found
+    local claude_md=$(find_claude_md)
+    [[ -n "$claude_md" ]] && context="$context @$claude_md"
+
+    local ready_backlog=$(jq '[.items[] | select(.readyForSprint == true and .passes != true)] | length' "$BACKLOG_DIR/backlog.json" 2>/dev/null || echo 0)
+    local ready_bugs=$(jq '[.items[] | select(.readyForSprint == true and .passes != true)] | length' "$BACKLOG_DIR/bugs.json" 2>/dev/null || echo 0)
     log_info "Current ready buffer: $((ready_backlog + ready_bugs)) items ($ready_backlog features, $ready_bugs bugs)"
     echo ""
 
@@ -437,7 +484,7 @@ cmd_groom() {
     prompt="$prompt
 
 ## Mode
-$agent_mode
+groom
 
 ## Completion Contract
 When finished, write to \`.aishore/data/status/result.json\`:
@@ -456,10 +503,9 @@ When finished, write to \`.aishore/data/status/result.json\`:
 $prompt" &
 
     local agent_pid=$!
-    local timeout="$AGENT_TIMEOUT"
     local elapsed=0
 
-    while [[ $elapsed -lt $timeout ]]; do
+    while [[ $elapsed -lt $AGENT_TIMEOUT ]]; do
         ! kill -0 "$agent_pid" 2>/dev/null && break
         [[ -f "$STATUS_DIR/result.json" ]] && { sleep 2; break; }
         sleep 5
@@ -495,13 +541,10 @@ cmd_review() {
     echo "Mode: $([[ "$update_docs" == "true" ]] && echo "Update docs" || echo "Read-only")"
     echo ""
 
-    local context="@$PLAN_DIR/backlog.json @$PLAN_DIR/bugs.json @$ARCHIVE_DIR/sprints.jsonl"
-    [[ -f "$CONTEXT_PROJECT" ]] && context="$context @$CONTEXT_PROJECT"
-
-    local since_context=""
-    if [[ -n "$since" ]]; then
-        since_context="Review changes since commit: $since"
-    fi
+    local context="@$BACKLOG_DIR/backlog.json @$BACKLOG_DIR/bugs.json"
+    [[ -f "$ARCHIVE_DIR/sprints.jsonl" ]] && context="$context @$ARCHIVE_DIR/sprints.jsonl"
+    local claude_md=$(find_claude_md)
+    [[ -n "$claude_md" ]] && context="$context @$claude_md"
 
     local allowed_tools="Bash(git:*),Read,Glob,Grep"
     [[ "$update_docs" == "true" ]] && allowed_tools="Bash(git:*),Edit,Write,Read,Glob,Grep"
@@ -510,18 +553,45 @@ cmd_review() {
     prompt="$prompt
 
 ## Additional Context
-$since_context
-$([[ "$update_docs" == "true" ]] && echo "You may update project.md and add backlog items." || echo "Read-only review. Do not modify files.")
+$([[ -n "$since" ]] && echo "Review changes since commit: $since")
+$([[ "$update_docs" == "true" ]] && echo "You may update documentation and add backlog items." || echo "Read-only review. Do not modify files.")
 
 CRITICAL: End with: <<SIGNAL:ARCHITECT_REVIEW_COMPLETE>>"
 
-    run_claude_agent "architect" "$MODEL_PRIMARY" "$allowed_tools" "$prompt" "$context"
+    local output_file=$(mktemp)
 
-    if check_signal "ARCHITECT_REVIEW_COMPLETE"; then
+    log_info "Running architect agent..."
+
+    setsid env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT \
+        claude --model "$MODEL_PRIMARY" \
+        --permission-mode acceptEdits \
+        --allowedTools "$allowed_tools" \
+        --print \
+        -p "$context
+$prompt" > "$output_file" 2>&1 &
+
+    local agent_pid=$!
+    local elapsed=0
+
+    while kill -0 "$agent_pid" 2>/dev/null; do
+        sleep 5
+        elapsed=$((elapsed + 5))
+        [[ $elapsed -ge $AGENT_TIMEOUT ]] && {
+            log_warning "Agent timed out"
+            kill -TERM -"$agent_pid" 2>/dev/null || kill -TERM "$agent_pid" 2>/dev/null
+            break
+        }
+    done
+
+    wait "$agent_pid" 2>/dev/null || true
+
+    if check_signal "ARCHITECT_REVIEW_COMPLETE" "$output_file"; then
         log_success "Architecture review complete"
     else
         log_warning "Review may be incomplete"
     fi
+
+    rm -f "$output_file"
 }
 
 cmd_metrics() {
@@ -531,11 +601,11 @@ cmd_metrics() {
     load_config
 
     local sprints_file="$ARCHIVE_DIR/sprints.jsonl"
-    local backlog_file="$PLAN_DIR/backlog.json"
-    local bugs_file="$PLAN_DIR/bugs.json"
+    local backlog_file="$BACKLOG_DIR/backlog.json"
+    local bugs_file="$BACKLOG_DIR/bugs.json"
 
     if [[ "$json_output" == "true" ]]; then
-        local completed=$(wc -l < "$sprints_file" 2>/dev/null | tr -d ' ' || echo 0)
+        local completed=$([[ -f "$sprints_file" ]] && wc -l < "$sprints_file" | tr -d ' ' || echo 0)
         local backlog_total=$(jq '.items | length' "$backlog_file" 2>/dev/null || echo 0)
         local bugs_total=$(jq '.items | length' "$bugs_file" 2>/dev/null || echo 0)
         local ready_backlog=$(jq '[.items[] | select(.readyForSprint == true and .passes != true)] | length' "$backlog_file" 2>/dev/null || echo 0)
@@ -552,7 +622,7 @@ EOF
     else
         log_header "aishore Metrics"
         echo ""
-        echo "Completed Sprints: $(wc -l < "$sprints_file" 2>/dev/null | tr -d ' ' || echo 0)"
+        echo "Completed Sprints: $([[ -f "$sprints_file" ]] && wc -l < "$sprints_file" | tr -d ' ' || echo 0)"
         echo ""
         echo "Backlog:"
         echo "  Total items: $(jq '.items | length' "$backlog_file" 2>/dev/null || echo 0)"
@@ -567,100 +637,145 @@ EOF
 cmd_init() {
     log_header "Initializing aishore"
 
-    # Check if already initialized
-    if [[ -f "$CONFIG_FILE" ]]; then
-        log_warning "aishore already initialized (config.yaml exists)"
+    if [[ -f "$BACKLOG_DIR/backlog.json" ]]; then
+        log_warning "aishore already initialized (backlog.json exists)"
         read -p "Reinitialize? [y/N] " c
         [[ $c != [yY] ]] && exit 0
     fi
 
-    # Create config from template
-    cat > "$CONFIG_FILE" << 'EOF'
-# aishore configuration
-# Edit this file to customize for your project
+    # Create directories
+    mkdir -p "$STATUS_DIR" "$LOGS_DIR" "$ARCHIVE_DIR" "$BACKLOG_DIR/archive" "$AGENTS_DIR"
 
-project:
-  name: "My Project"
+    # Create minimal config (optional, for overrides only)
+    [[ ! -f "$CONFIG_FILE" ]] && cat > "$CONFIG_FILE" << 'EOF'
+# aishore configuration (optional - sensible defaults are used)
+# Uncomment and modify only what you need to override
 
-validation:
-  # Command to run for validation (tests, linting, type checking)
-  # Examples:
-  #   Node.js: "npm run type-check && npm run lint && npm test"
-  #   Python:  "pytest && mypy . && ruff check ."
-  #   Go:      "go test ./... && go vet ./..."
-  #   Rust:    "cargo test && cargo clippy"
-  command: "echo 'Configure validation command in .aishore/config.yaml'"
-  timeout: 120
+# validation:
+#   command: "npm run type-check && npm run lint && npm test"
+#   timeout: 120
 
-models:
-  # Primary model for developer, architect, tech-lead
-  primary: "claude-opus-4-5-20251101"
-  # Fast model for validator
-  fast: "claude-sonnet-4-20250514"
+# models:
+#   primary: "claude-opus-4-5-20251101"
+#   fast: "claude-sonnet-4-20250514"
 
-agent:
-  # Timeout for agent execution (seconds)
-  timeout: 600
-
-context:
-  # Path to project conventions doc (relative to .aishore/ or absolute)
-  project: "context/project.md"
-  # Path to product vision doc (optional)
-  product: ""
+# agent:
+#   timeout: 3600
 EOF
 
-    # Create context placeholder
-    cat > "$CONTEXT_DIR/project.md" << 'EOF'
-# Project Context
-
-Add your project conventions and architecture documentation here.
-
-This file is read by all aishore agents to understand:
-- Code style and patterns
-- Project structure
-- Testing conventions
-- API patterns
-
-You can also symlink to an existing file:
-  ln -sf ../CLAUDE.md .aishore/context/project.md
+    # Create backlog if missing
+    [[ ! -f "$BACKLOG_DIR/backlog.json" ]] && cat > "$BACKLOG_DIR/backlog.json" << 'EOF'
+{
+  "description": "Feature backlog",
+  "items": []
+}
 EOF
 
-    # Create .gitkeep files
-    touch "$DATA_DIR/archive/.gitkeep"
-    touch "$DATA_DIR/logs/.gitkeep"
-    touch "$DATA_DIR/status/.gitkeep"
-    touch "$PLAN_DIR/archive/.gitkeep"
+    # Create bugs.json if missing
+    [[ ! -f "$BACKLOG_DIR/bugs.json" ]] && cat > "$BACKLOG_DIR/bugs.json" << 'EOF'
+{
+  "description": "Bugs and tech debt",
+  "items": []
+}
+EOF
+
+    # Create sprint.json if missing
+    [[ ! -f "$BACKLOG_DIR/sprint.json" ]] && echo '{"sprintId": null, "status": "idle", "item": null}' > "$BACKLOG_DIR/sprint.json"
+
+    # Create archive file
+    touch "$ARCHIVE_DIR/sprints.jsonl"
 
     # Update .gitignore
     local gitignore="$PROJECT_ROOT/.gitignore"
     if [[ -f "$gitignore" ]]; then
         if ! grep -q ".aishore/data/logs/" "$gitignore" 2>/dev/null; then
-            echo "" >> "$gitignore"
-            echo "# aishore runtime files" >> "$gitignore"
-            echo ".aishore/data/logs/" >> "$gitignore"
-            echo ".aishore/data/status/result.json" >> "$gitignore"
+            echo -e "\n# aishore runtime files\n.aishore/data/logs/\n.aishore/data/status/result.json" >> "$gitignore"
         fi
-    else
-        cat > "$gitignore" << 'EOF'
-# aishore runtime files
-.aishore/data/logs/
-.aishore/data/status/result.json
-EOF
     fi
 
     log_success "aishore initialized!"
     echo ""
     echo "Next steps:"
-    echo "  1. Edit .aishore/config.yaml - set your validation command"
-    echo "  2. Edit .aishore/context/project.md - add project conventions"
-    echo "     Or symlink: ln -sf ../CLAUDE.md .aishore/context/project.md"
-    echo "  3. Add features to .aishore/plan/backlog.json"
-    echo "  4. Run: .aishore/aishore groom"
-    echo "  5. Run: .aishore/aishore run"
+    echo "  1. Add features to backlog/backlog.json"
+    echo "  2. Run: .aishore/aishore groom"
+    echo "  3. Run: .aishore/aishore run"
+    echo ""
+    echo "Optional: Edit .aishore/config.yaml to override defaults"
+
+    local claude_md=$(find_claude_md)
+    if [[ -n "$claude_md" ]]; then
+        log_success "Found $claude_md - will be used automatically"
+    else
+        log_info "Tip: Create CLAUDE.md in project root for project context"
+    fi
 }
 
 cmd_version() {
     echo "aishore version $AISHORE_VERSION"
+}
+
+cmd_update() {
+    local repo_url="https://raw.githubusercontent.com/simonplant/aishore/main"
+    local dry_run=false
+    [[ "${1:-}" == "--dry-run" ]] && dry_run=true
+
+    log_header "aishore Update"
+    echo "Current version: $AISHORE_VERSION"
+    echo ""
+
+    # Check for curl or wget
+    local fetch_cmd=""
+    if command -v curl &> /dev/null; then
+        fetch_cmd="curl -fsSL"
+    elif command -v wget &> /dev/null; then
+        fetch_cmd="wget -qO-"
+    else
+        log_error "curl or wget required for update"
+        exit 1
+    fi
+
+    # Fetch remote version
+    local remote_script
+    remote_script=$($fetch_cmd "$repo_url/.aishore/aishore" 2>/dev/null) || {
+        log_error "Failed to fetch from $repo_url"
+        exit 1
+    }
+
+    local remote_version
+    remote_version=$(echo "$remote_script" | grep -E '^AISHORE_VERSION=' | head -1 | cut -d'"' -f2)
+
+    if [[ -z "$remote_version" ]]; then
+        log_error "Could not determine remote version"
+        exit 1
+    fi
+
+    echo "Remote version: $remote_version"
+    echo ""
+
+    if [[ "$AISHORE_VERSION" == "$remote_version" ]]; then
+        log_success "Already up to date"
+        return 0
+    fi
+
+    if [[ "$dry_run" == "true" ]]; then
+        log_info "Dry run - would update to $remote_version"
+        return 0
+    fi
+
+    log_info "Updating aishore script..."
+    echo "$remote_script" > "$AISHORE_ROOT/aishore"
+    chmod +x "$AISHORE_ROOT/aishore"
+
+    # Update agent prompts
+    for agent in developer validator tech-lead product-owner architect; do
+        log_info "Updating agents/$agent.md..."
+        $fetch_cmd "$repo_url/.aishore/agents/$agent.md" > "$AGENTS_DIR/$agent.md" 2>/dev/null || \
+            log_warning "Could not update $agent.md"
+    done
+
+    log_success "Updated to $remote_version"
+    echo ""
+    echo "Note: config.yaml and backlog/ were not modified (your content)"
 }
 
 cmd_help() {
@@ -670,38 +785,46 @@ aishore - AI Sprint Runner (v$AISHORE_VERSION)
 Usage: .aishore/aishore <command> [options]
 
 Commands:
-  run [count]       Run sprints (default: 1)
+  run [count]       Run N sprints (default: 1)
+  run <ID>          Run specific item by ID (e.g., TEST-006)
     --auto-commit   Automatically commit after each sprint
 
   groom             Groom bugs/tech debt (Tech Lead mode)
     --backlog       Groom features instead (Product Owner mode)
 
   review            Architecture review (read-only)
-    --update-docs   Allow updates to project docs
+    --update-docs   Allow updates to docs
     --since <hash>  Review since specific commit
 
   metrics           Show sprint metrics
     --json          Output as JSON
 
-  init              Initialize aishore in current project
+  update            Update aishore from upstream
+    --dry-run       Check for updates without applying
 
+  init              Initialize aishore in current project
   version           Show version
   help              Show this help
 
 Examples:
-  .aishore/aishore run              # Run 1 sprint
+  .aishore/aishore run              # Run 1 sprint (auto-pick)
   .aishore/aishore run 5            # Run 5 sprints
+  .aishore/aishore run TEST-006     # Run specific item
   .aishore/aishore run --auto-commit 3
-  .aishore/aishore groom            # Groom bugs (tech lead)
-  .aishore/aishore groom --backlog  # Groom features (product owner)
-  .aishore/aishore review
-  .aishore/aishore metrics --json
+  .aishore/aishore groom
+  .aishore/aishore update --dry-run
 
-Configuration:
-  .aishore/config.yaml          All settings (validation, models, timeouts)
-  .aishore/context/project.md   Project conventions (read by agents)
-  .aishore/plan/backlog.json    Feature backlog
-  .aishore/plan/bugs.json       Tech debt backlog
+Files:
+  backlog/backlog.json    Your feature backlog (user content)
+  backlog/bugs.json       Your bugs/tech debt (user content)
+  backlog/sprint.json     Current sprint state
+  .aishore/config.yaml    Optional configuration overrides
+  .aishore/agents/        Agent prompts (updated by 'update')
+
+Environment Variables:
+  AISHORE_MODEL_PRIMARY     Primary model (default: claude-opus-4-5-20251101)
+  AISHORE_MODEL_FAST        Fast model (default: claude-sonnet-4-20250514)
+  AISHORE_AGENT_TIMEOUT     Agent timeout in seconds (default: 3600)
 EOF
 }
 
@@ -710,8 +833,7 @@ EOF
 # ============================================================================
 
 main() {
-    # Ensure directories exist
-    mkdir -p "$STATUS_DIR" "$LOGS_DIR" "$ARCHIVE_DIR" "$PLAN_DIR/archive"
+    mkdir -p "$STATUS_DIR" "$LOGS_DIR" "$ARCHIVE_DIR" "$BACKLOG_DIR/archive"
 
     local cmd="${1:-help}"
     shift || true
@@ -721,6 +843,7 @@ main() {
         groom)   cmd_groom "$@" ;;
         review)  cmd_review "$@" ;;
         metrics) cmd_metrics "$@" ;;
+        update)  cmd_update "$@" ;;
         init)    cmd_init "$@" ;;
         version|-v|--version) cmd_version ;;
         help|-h|--help) cmd_help ;;

@@ -4,8 +4,8 @@ You implement features from the sprint backlog.
 
 ## Context
 
-- `.aishore/plan/sprint.json` contains your assigned item with `steps` and `acceptanceCriteria`
-- `.aishore/context/project.md` has project conventions and architecture (if it exists)
+- `backlog/sprint.json` contains your assigned item with `steps` and `acceptanceCriteria`
+- `CLAUDE.md` (if present) has project conventions and architecture
 
 ## Process
 

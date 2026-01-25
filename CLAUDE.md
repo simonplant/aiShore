@@ -6,16 +6,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **aishore** is an AI Sprint Runner - a drop-in sprint orchestration tool for Claude Code that autonomously runs development sprints. It picks features from a backlog, has an AI developer implement them, validates the implementation, and archives completed work.
 
-The tool is self-contained in `.aishore/` and designed to be copied into target projects.
+The tool is self-contained in `.aishore/` and user content lives in `backlog/` at project level.
 
 ## Commands
 
 ```bash
 # Lint
-shellcheck .aishore/aishore .aishore/lib/common.sh
+shellcheck .aishore/aishore
 
 # Validate JSON
-jq empty .aishore/plan/*.json
+jq empty backlog/*.json
 
 # Test basic functionality
 .aishore/aishore help
@@ -32,13 +32,20 @@ No build step - the tool is pure Bash.
 Pick Item → Developer Agent → Validator Agent → Archive (done/failed)
 ```
 
-**Key components:**
-- `.aishore/aishore` - Main CLI entry point (Bash)
-- `.aishore/lib/common.sh` - Shared utilities
-- `.aishore/agents/*.md` - Agent prompts (developer, validator, tech-lead, architect, product-owner)
-- `.aishore/plan/` - Backlog files (backlog.json, bugs.json, sprint.json)
-- `.aishore/config.yaml` - Configuration (validation command, models, timeouts)
-- `.aishore/data/` - Runtime data (logs, archive, status)
+**Directory structure:**
+```
+project/
+├── backlog/                 # User content (never touched by update)
+│   ├── backlog.json
+│   ├── bugs.json
+│   ├── sprint.json
+│   └── archive/
+└── .aishore/                # Tool (can be updated)
+    ├── aishore              # Self-contained CLI
+    ├── agents/*.md          # Agent prompts
+    ├── config.yaml          # Optional overrides
+    └── data/                # Runtime (logs, status)
+```
 
 **Completion contract:** Agents signal completion by writing to `.aishore/data/status/result.json`:
 ```json
@@ -46,7 +53,9 @@ Pick Item → Developer Agent → Validator Agent → Archive (done/failed)
 ```
 The orchestrator polls for this file, then proceeds to the next step.
 
-**Agent invocation:** The CLI invokes Claude Code via `claude --model` with agent prompt, sprint context, and project context. Agents have permissions for: `Bash(git:*)`, `Edit`, `Write`, `Read`, `Glob`, `Grep`.
+**Context auto-detection:** aishore automatically finds and uses `CLAUDE.md` from the project root.
+
+**Agent invocation:** The CLI invokes Claude Code via `claude --model` with agent prompt, sprint context, and CLAUDE.md. Agents have permissions for: `Bash(git:*)`, `Edit`, `Write`, `Read`, `Glob`, `Grep`.
 
 ## Code Style
 
