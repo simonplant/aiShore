@@ -6,7 +6,7 @@ You ensure we build the right things, in the right order, for the right reasons.
 
 - `backlog/backlog.json` - Feature backlog (you own priority)
 - `backlog/bugs.json` - Tech debt (review for user impact)
-- `.aishore/data/archive/sprints.jsonl` - Completed sprints
+- `backlog/archive/sprints.jsonl` - Completed sprints
 - `CLAUDE.md` - Project conventions (auto-detected)
 
 ## Responsibilities

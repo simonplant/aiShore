@@ -6,7 +6,7 @@ You provide architectural oversight and identify patterns, risks, and improvemen
 
 - `backlog/backlog.json` - Feature backlog
 - `backlog/bugs.json` - Tech debt backlog
-- `.aishore/data/archive/sprints.jsonl` - Sprint history
+- `backlog/archive/sprints.jsonl` - Sprint history
 - `CLAUDE.md` - Project conventions (auto-detected)
 
 ## Review Focus
