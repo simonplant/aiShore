@@ -192,6 +192,7 @@ load_config() {
         # Simple grep fallback for validation command only
         VALIDATE_CMD=$(grep -E '^\s*command:' "$CONFIG_FILE" 2>/dev/null | head -1 | sed 's/.*command:\s*//' | tr -d '"' || echo "")
     fi
+    return 0
 }
 
 # ============================================================================

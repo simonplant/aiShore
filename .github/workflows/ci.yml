@@ -58,7 +58,7 @@ jobs:
         run: .aishore/aishore version
 
       - name: Test metrics command
-        run: bash -x .aishore/aishore metrics 2>&1
+        run: .aishore/aishore metrics
 
       - name: Validate JSON files
         run: |
