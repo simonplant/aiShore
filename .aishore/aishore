@@ -10,12 +10,26 @@
 #   groom --backlog Groom features (Product Owner)
 #   review          Architecture review
 #   metrics         Show sprint metrics
-#   init            Initialize aishore in current project
+#   update          Update aishore from upstream (with checksum verification)
+#   checksums       Regenerate checksums.sha256
+#   init            Setup wizard (prerequisites, config, backlog)
 #   help            Show this help
 
 set -euo pipefail
 
-AISHORE_VERSION="0.1.2"
+AISHORE_TMPDIR=""
+cleanup_tmpdir() {
+    [[ -n "$AISHORE_TMPDIR" && -d "$AISHORE_TMPDIR" ]] && rm -rf "$AISHORE_TMPDIR"
+    return 0
+}
+trap cleanup_tmpdir EXIT
+
+ensure_tmpdir() {
+    [[ -z "$AISHORE_TMPDIR" ]] && AISHORE_TMPDIR=$(mktemp -d "${TMPDIR:-/tmp}/aishore.XXXXXX")
+    echo "$AISHORE_TMPDIR"
+}
+
+AISHORE_VERSION="0.1.3"
 
 # ============================================================================
 # PATHS
@@ -71,17 +85,76 @@ log_agent()   { echo -e "${MAGENTA}[$1]${NC} $2"; }
 
 iso_timestamp() { date -Iseconds; }
 
+count_ready_items() {
+    local file="$1"
+    jq '[.items[] | select(.readyForSprint == true and .passes != true)] | length' "$file" 2>/dev/null || echo 0
+}
+
+build_context() {
+    local context=""
+    for arg in "$@"; do
+        [[ -n "$context" ]] && context="$context $arg" || context="$arg"
+    done
+    local claude_md
+    claude_md=$(find_claude_md)
+    [[ -n "$claude_md" ]] && context="$context @$claude_md"
+    echo "$context"
+}
+
+build_completion_contract() {
+    cat <<'EOCONTRACT'
+
+## Completion Contract
+When you are finished, you MUST write to `.aishore/data/status/result.json`:
+
+On success:
+```json
+{"status": "pass", "summary": "brief description of what was done"}
+```
+
+On failure:
+```json
+{"status": "fail", "reason": "what went wrong"}
+```
+
+This file is how the orchestrator knows you finished. Write it as your final action.
+EOCONTRACT
+}
+
+acquire_lock() {
+    local lockfile="$STATUS_DIR/.aishore.lock"
+    mkdir -p "$STATUS_DIR" 2>/dev/null || true
+    if ! command -v flock &>/dev/null; then
+        log_warning "flock not available — skipping concurrency guard"
+        return 0
+    fi
+    exec 9>"$lockfile"
+    if ! flock -n 9; then
+        log_error "Another aishore process is running (lockfile: $lockfile)"
+        exit 1
+    fi
+}
+
 append_log() {
     local file="$1" msg="$2"
     mkdir -p "$(dirname "$file")" 2>/dev/null || true
     echo "$msg" >> "$file"
 }
 
-check_signal() {
-    local signal_name="$1"
-    local output_file="$2"
-    [[ ! -s "$output_file" ]] && return 1
-    grep -qE "<<[[:space:]]*SIGNAL[[:space:]]*:[[:space:]]*${signal_name}[[:space:]]*>>" "$output_file" 2>/dev/null
+verify_checksum() {
+    local file="$1"
+    local expected="$2"
+    [[ -z "$expected" ]] && return 1
+    local actual
+    if command -v sha256sum &>/dev/null; then
+        actual=$(sha256sum "$file" | cut -d' ' -f1)
+    elif command -v shasum &>/dev/null; then
+        actual=$(shasum -a 256 "$file" | cut -d' ' -f1)
+    else
+        log_warning "No sha256sum or shasum found — skipping checksum verification"
+        return 0
+    fi
+    [[ "$actual" == "$expected" ]]
 }
 
 # ============================================================================
@@ -94,7 +167,7 @@ find_claude_md() {
     for path in "$dir/CLAUDE.md" "$dir/claude.md" "$dir/docs/CLAUDE.md"; do
         [[ -f "$path" ]] && { echo "$path"; return 0; }
     done
-    return 1
+    return 0
 }
 
 # ============================================================================
@@ -126,6 +199,7 @@ load_config() {
 
 pick_item() {
     local specific_id="${1:-}"
+    local skip_ids="${2:-}"
     local item_json
     local source_file="$STATUS_DIR/.item_source"
 
@@ -146,11 +220,18 @@ pick_item() {
         return 1
     fi
 
-    # Auto-pick: highest priority ready item
+    # Build skip list as JSON array for jq
+    local skip_json="[]"
+    if [[ -n "$skip_ids" ]]; then
+        skip_json=$(echo "$skip_ids" | tr ',' '\n' | jq -R . | jq -s .)
+    fi
+
+    # Auto-pick: highest priority ready item (excluding failed items)
     for backlog in "backlog.json" "bugs.json"; do
-        item_json=$(jq -r '
+        item_json=$(jq -r --argjson skip "$skip_json" '
             [.items[] |
             select(.readyForSprint == true and (.passes == false or .passes == null) and (.status == "todo" or .status == null)) |
+            select(.id as $id | $skip | index($id) | not) |
             . + {_priorityOrder: (if .priority == "must" then 0 elif .priority == "should" then 1 elif .priority == "could" then 2 else 3 end)}] |
             sort_by(._priorityOrder) |
             first |
@@ -179,24 +260,34 @@ get_item_source() {
 create_sprint() {
     local item_json="$1"
     local source="$2"
-    local item_id=$(echo "$item_json" | jq -r '.id')
-    local title=$(echo "$item_json" | jq -r '.title // .description')
+    local item_id
+    item_id=$(echo "$item_json" | jq -r '.id')
+    local title
+    title=$(echo "$item_json" | jq -r '.title // .description')
+    local now
+    now=$(date -Iseconds)
 
-    cat > "$BACKLOG_DIR/sprint.json" <<EOF
-{
-  "sprintId": "sprint-$(date +%s)",
-  "startedAt": "$(date -Iseconds)",
-  "status": "in_progress",
-  "item": {
-    "id": "$item_id",
-    "title": $(echo "$title" | jq -R .),
-    "sourceBacklog": "$source",
-    "steps": $(echo "$item_json" | jq '.steps // []'),
-    "acceptanceCriteria": $(echo "$item_json" | jq '.acceptanceCriteria // []'),
-    "startedAt": "$(date -Iseconds)"
-  }
-}
-EOF
+    jq -n \
+        --arg sprintId "sprint-$(date +%s)" \
+        --arg startedAt "$now" \
+        --arg itemId "$item_id" \
+        --arg title "$title" \
+        --arg source "$source" \
+        --argjson steps "$(echo "$item_json" | jq '.steps // []')" \
+        --argjson ac "$(echo "$item_json" | jq '.acceptanceCriteria // []')" \
+        '{
+            sprintId: $sprintId,
+            startedAt: $startedAt,
+            status: "in_progress",
+            item: {
+                id: $itemId,
+                title: $title,
+                sourceBacklog: $source,
+                steps: $steps,
+                acceptanceCriteria: $ac,
+                startedAt: $startedAt
+            }
+        }' > "$BACKLOG_DIR/sprint.json"
 
     ITEM_ID="$item_id"
     log_info "Sprint created: $item_id - $title"
@@ -210,7 +301,7 @@ mark_complete() {
     [[ -z "$source" ]] && { log_error "Cannot mark complete: source backlog is empty"; return 1; }
 
     # Update source backlog
-    local tmp=$(mktemp)
+    local tmp="$(ensure_tmpdir)/backlog_update.json"
     if jq --arg id "$item_id" --arg ts "$now" '
         (.items[] | select(.id == $id)) |= . + {passes: true, status: "done", readyForSprint: false, completedAt: $ts}
     ' "$BACKLOG_DIR/$source" > "$tmp" 2>/dev/null; then
@@ -222,14 +313,23 @@ mark_complete() {
     fi
 
     # Update sprint.json
-    tmp=$(mktemp)
-    jq --arg ts "$now" '.status = "completed" | .completedAt = $ts | .item.status = "passed" | .item.completedAt = $ts' \
-        "$BACKLOG_DIR/sprint.json" > "$tmp" && mv "$tmp" "$BACKLOG_DIR/sprint.json"
+    local tmp_sprint="$(ensure_tmpdir)/sprint_update.json"
+    if jq --arg ts "$now" '.status = "completed" | .completedAt = $ts | .item.status = "passed" | .item.completedAt = $ts' \
+        "$BACKLOG_DIR/sprint.json" > "$tmp_sprint" 2>/dev/null; then
+        mv "$tmp_sprint" "$BACKLOG_DIR/sprint.json"
+    else
+        rm -f "$tmp_sprint"
+        log_warning "Failed to update sprint.json status (item already marked complete in $source)"
+    fi
 
-    # Append to archive
-    local sprint_id=$(jq -r '.sprintId' "$BACKLOG_DIR/sprint.json")
-    echo "{\"date\":\"$(date +%Y-%m-%d)\",\"sprintId\":\"$sprint_id\",\"itemId\":\"$item_id\",\"status\":\"complete\"}" \
-        >> "$ARCHIVE_DIR/sprints.jsonl"
+    # Append to archive (non-fatal — primary state is already consistent)
+    local sprint_id
+    sprint_id=$(jq -r '.sprintId' "$BACKLOG_DIR/sprint.json" 2>/dev/null || echo "unknown")
+    if ! jq -n --arg date "$(date +%Y-%m-%d)" --arg sid "$sprint_id" --arg iid "$item_id" \
+        '{date: $date, sprintId: $sid, itemId: $iid, status: "complete"}' \
+        >> "$ARCHIVE_DIR/sprints.jsonl" 2>/dev/null; then
+        log_warning "Failed to append to archive — sprint data is still consistent"
+    fi
 }
 
 reset_sprint() {
@@ -242,53 +342,41 @@ EOF
 # AGENT EXECUTION
 # ============================================================================
 
-run_agent() {
-    local agent_name="$1"
-    local mode="$2"
-    local model="${3:-$MODEL_PRIMARY}"
+# Core process management: launch claude agent and wait for result.json or timeout.
+# Args: agent_label model allowed_tools output_format prompt
+#   agent_label   - name for logging
+#   model         - model to use
+#   allowed_tools - comma-separated tool list
+#   output_format - "text" or "stream-json" (use "text" for --print capture)
+#   prompt        - full prompt string (including context @-files)
+# Optional: set AGENT_OUTPUT_FILE before calling to capture --print output to a file.
+run_agent_process() {
+    local agent_label="$1"
+    local model="$2"
+    local allowed_tools="$3"
+    local output_format="$4"
+    local prompt="$5"
 
-    local prompt_file="$AGENTS_DIR/${agent_name}.md"
-    [[ ! -f "$prompt_file" ]] && { log_error "Agent not found: $agent_name"; return 1; }
-
-    rm -f "$STATUS_DIR/result.json"
-
-    # Build context: sprint.json + auto-detected CLAUDE.md
-    local context_files="@$BACKLOG_DIR/sprint.json"
-    local claude_md=$(find_claude_md)
-    [[ -n "$claude_md" ]] && context_files="$context_files @$claude_md"
-
-    # Build prompt with completion contract
-    local prompt=$(cat "$prompt_file")
-    prompt="$prompt
-
-## Mode
-$mode
-
-## Completion Contract
-When you are finished, you MUST write to \`.aishore/data/status/result.json\`:
-
-On success:
-\`\`\`json
-{\"status\": \"pass\", \"summary\": \"brief description of what was done\"}
-\`\`\`
-
-On failure:
-\`\`\`json
-{\"status\": \"fail\", \"reason\": \"what went wrong\"}
-\`\`\`
-
-This file is how the orchestrator knows you finished. Write it as your final action."
-
-    log_agent "$agent_name" "Starting (model: $model, timeout: ${AGENT_TIMEOUT}s)"
+    log_agent "$agent_label" "Starting (model: $model, timeout: ${AGENT_TIMEOUT}s)"
     local start_time=$(date +%s)
 
-    setsid env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT \
-        claude --model "$model" \
-        --permission-mode acceptEdits \
-        --allowedTools "Bash(git:*),Edit,Write,Read,Glob,Grep" \
-        --output-format text \
-        -p "$context_files
-$prompt" &
+    local claude_args=(
+        --model "$model"
+        --permission-mode acceptEdits
+        --allowedTools "$allowed_tools"
+    )
+
+    if [[ -n "${AGENT_OUTPUT_FILE:-}" ]]; then
+        claude_args+=(--print)
+        setsid env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT \
+            claude "${claude_args[@]}" \
+            -p "$prompt" > "$AGENT_OUTPUT_FILE" 2>&1 &
+    else
+        claude_args+=(--output-format "$output_format")
+        setsid env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT \
+            claude "${claude_args[@]}" \
+            -p "$prompt" &
+    fi
 
     local agent_pid=$!
     local elapsed=0
@@ -315,10 +403,36 @@ $prompt" &
     wait "$agent_pid" 2>/dev/null || true
 
     local duration=$(($(date +%s) - start_time))
-    log_agent "$agent_name" "Completed in ${duration}s"
+    log_agent "$agent_label" "Completed in ${duration}s"
 
     append_log "$LOGS_DIR/agent-runs.log" \
-        "$(iso_timestamp)|$agent_name|$mode|${duration}s|$model"
+        "$(iso_timestamp)|$agent_label|${AGENT_MODE:-unknown}|${duration}s|$model"
+}
+
+run_agent() {
+    local agent_name="$1"
+    local mode="$2"
+    local model="${3:-$MODEL_PRIMARY}"
+
+    local prompt_file="$AGENTS_DIR/${agent_name}.md"
+    [[ ! -f "$prompt_file" ]] && { log_error "Agent not found: $agent_name"; return 1; }
+
+    rm -f "$STATUS_DIR/result.json"
+
+    local context_files
+    context_files=$(build_context "@$BACKLOG_DIR/sprint.json")
+
+    local prompt
+    prompt="$(cat "$prompt_file")
+
+## Mode
+$mode
+$(build_completion_contract)"
+
+    AGENT_MODE="$mode" run_agent_process "$agent_name" "$model" \
+        "Bash(git:*),Edit,Write,Read,Glob,Grep" "text" \
+        "$context_files
+$prompt"
 }
 
 check_result() {
@@ -364,6 +478,7 @@ cmd_run() {
         esac
     done
 
+    acquire_lock
     load_config
     cd "$PROJECT_ROOT"
 
@@ -378,12 +493,19 @@ cmd_run() {
     echo ""
 
     local passed=0 failed=0
+    declare -A FAILED_IDS
 
     for ((i=1; i<=count; i++)); do
         [[ $count -gt 1 ]] && log_subheader "Sprint $i/$count"
 
+        # Build comma-separated exclusion list from failed items
+        local skip_list=""
+        for fid in "${!FAILED_IDS[@]}"; do
+            [[ -n "$skip_list" ]] && skip_list="$skip_list,$fid" || skip_list="$fid"
+        done
+
         local item_json
-        if ! item_json=$(pick_item "$specific_id"); then
+        if ! item_json=$(pick_item "$specific_id" "$skip_list"); then
             if [[ -n "$specific_id" ]]; then
                 log_error "Item not found: $specific_id"
             else
@@ -401,18 +523,45 @@ cmd_run() {
         run_agent "developer" "implement" "$MODEL_PRIMARY"
         if ! check_result; then
             log_error "Implementation failed"
-            ((failed++)) || true
+            failed=$((failed + 1))
+            FAILED_IDS["$ITEM_ID"]=1
             git checkout -- . 2>/dev/null || true
             git clean -fd 2>/dev/null || true
             reset_sprint
             continue
         fi
 
-        # Run validator
+        # Run validation command (if configured)
+        if [[ -n "$VALIDATE_CMD" ]]; then
+            log_info "Running validation: $VALIDATE_CMD"
+            local validate_ok=true
+            if command -v timeout &>/dev/null; then
+                if ! timeout "$VALIDATE_TIMEOUT" bash -c "$VALIDATE_CMD" 2>&1; then
+                    validate_ok=false
+                fi
+            else
+                if ! bash -c "$VALIDATE_CMD" 2>&1; then
+                    validate_ok=false
+                fi
+            fi
+            if [[ "$validate_ok" != "true" ]]; then
+                log_error "Validation command failed"
+                failed=$((failed + 1))
+                FAILED_IDS["$ITEM_ID"]=1
+                git checkout -- . 2>/dev/null || true
+                git clean -fd 2>/dev/null || true
+                reset_sprint
+                continue
+            fi
+            log_success "Validation passed"
+        fi
+
+        # Run validator agent
         run_agent "validator" "validate" "$MODEL_FAST"
         if ! check_result; then
             log_error "Validation failed"
-            ((failed++)) || true
+            failed=$((failed + 1))
+            FAILED_IDS["$ITEM_ID"]=1
             git checkout -- . 2>/dev/null || true
             git clean -fd 2>/dev/null || true
             reset_sprint
@@ -422,10 +571,11 @@ cmd_run() {
         # Success
         if mark_complete "$ITEM_ID" "$item_source"; then
             log_success "Sprint complete: $ITEM_ID"
-            ((passed++)) || true
+            passed=$((passed + 1))
         else
             log_error "Failed to mark $ITEM_ID complete"
-            ((failed++)) || true
+            failed=$((failed + 1))
+            FAILED_IDS["$ITEM_ID"]=1
             continue
         fi
 
@@ -455,71 +605,48 @@ cmd_groom() {
     local mode="bugs"
     [[ "${1:-}" == "--backlog" ]] && mode="backlog"
 
+    acquire_lock
     load_config
     cd "$PROJECT_ROOT"
 
-    local agent context
+    local agent
     if [[ "$mode" == "backlog" ]]; then
         log_header "Product Owner: Backlog Grooming"
         agent="product-owner"
-        context="@$BACKLOG_DIR/backlog.json @$BACKLOG_DIR/bugs.json"
     else
         log_header "Tech Lead: Bugs/Tech Debt Grooming"
         agent="tech-lead"
-        context="@$BACKLOG_DIR/backlog.json @$BACKLOG_DIR/bugs.json"
     fi
 
-    # Add CLAUDE.md if found
-    local claude_md=$(find_claude_md)
-    [[ -n "$claude_md" ]] && context="$context @$claude_md"
+    local context
+    context=$(build_context "@$BACKLOG_DIR/backlog.json" "@$BACKLOG_DIR/bugs.json")
 
-    local ready_backlog=$(jq '[.items[] | select(.readyForSprint == true and .passes != true)] | length' "$BACKLOG_DIR/backlog.json" 2>/dev/null || echo 0)
-    local ready_bugs=$(jq '[.items[] | select(.readyForSprint == true and .passes != true)] | length' "$BACKLOG_DIR/bugs.json" 2>/dev/null || echo 0)
+    local ready_backlog
+    ready_backlog=$(count_ready_items "$BACKLOG_DIR/backlog.json")
+    local ready_bugs
+    ready_bugs=$(count_ready_items "$BACKLOG_DIR/bugs.json")
     log_info "Current ready buffer: $((ready_backlog + ready_bugs)) items ($ready_backlog features, $ready_bugs bugs)"
     echo ""
 
     rm -f "$STATUS_DIR/result.json"
 
-    local prompt=$(cat "$AGENTS_DIR/${agent}.md")
-    prompt="$prompt
+    local prompt
+    prompt="$(cat "$AGENTS_DIR/${agent}.md")
 
 ## Mode
 groom
-
-## Completion Contract
-When finished, write to \`.aishore/data/status/result.json\`:
-\`\`\`json
-{\"status\": \"pass\", \"summary\": \"Groomed X items, Y now ready for sprint\"}
-\`\`\`"
+$(build_completion_contract)"
 
     log_info "Running $agent agent..."
 
-    setsid env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT \
-        claude --model "$MODEL_PRIMARY" \
-        --permission-mode acceptEdits \
-        --allowedTools "Bash(git:*),Edit,Write,Read,Glob,Grep" \
-        --output-format text \
-        -p "$context
-$prompt" &
+    AGENT_MODE="groom" run_agent_process "$agent" "$MODEL_PRIMARY" \
+        "Bash(git:*),Edit,Write,Read,Glob,Grep" "text" \
+        "$context
+$prompt"
 
-    local agent_pid=$!
-    local elapsed=0
-
-    while [[ $elapsed -lt $AGENT_TIMEOUT ]]; do
-        ! kill -0 "$agent_pid" 2>/dev/null && break
-        [[ -f "$STATUS_DIR/result.json" ]] && { sleep 2; break; }
-        sleep 5
-        elapsed=$((elapsed + 5))
-    done
-
-    kill -0 "$agent_pid" 2>/dev/null && {
-        kill -TERM -"$agent_pid" 2>/dev/null || kill -TERM "$agent_pid" 2>/dev/null
-        sleep 2
-        kill -KILL -"$agent_pid" 2>/dev/null || true
-    }
-
-    wait "$agent_pid" 2>/dev/null || true
-    check_result
+    if ! check_result; then
+        exit 1
+    fi
 }
 
 cmd_review() {
@@ -534,6 +661,7 @@ cmd_review() {
         esac
     done
 
+    acquire_lock
     load_config
     cd "$PROJECT_ROOT"
 
@@ -541,57 +669,53 @@ cmd_review() {
     echo "Mode: $([[ "$update_docs" == "true" ]] && echo "Update docs" || echo "Read-only")"
     echo ""
 
-    local context="@$BACKLOG_DIR/backlog.json @$BACKLOG_DIR/bugs.json"
-    [[ -f "$ARCHIVE_DIR/sprints.jsonl" ]] && context="$context @$ARCHIVE_DIR/sprints.jsonl"
-    local claude_md=$(find_claude_md)
-    [[ -n "$claude_md" ]] && context="$context @$claude_md"
+    local context_args=("@$BACKLOG_DIR/backlog.json" "@$BACKLOG_DIR/bugs.json")
+    [[ -f "$ARCHIVE_DIR/sprints.jsonl" ]] && context_args+=("@$ARCHIVE_DIR/sprints.jsonl")
+    local context
+    context=$(build_context "${context_args[@]}")
 
-    local allowed_tools="Bash(git:*),Read,Glob,Grep"
-    [[ "$update_docs" == "true" ]] && allowed_tools="Bash(git:*),Edit,Write,Read,Glob,Grep"
+    local allowed_tools="Bash(git:*),Edit,Write,Read,Glob,Grep"
 
-    local prompt=$(cat "$AGENTS_DIR/architect.md")
-    prompt="$prompt
+    rm -f "$STATUS_DIR/result.json"
+
+    local prompt
+    prompt="$(cat "$AGENTS_DIR/architect.md")
 
 ## Additional Context
 $([[ -n "$since" ]] && echo "Review changes since commit: $since")
 $([[ "$update_docs" == "true" ]] && echo "You may update documentation and add backlog items." || echo "Read-only review. Do not modify files.")
+$(build_completion_contract)"
 
-CRITICAL: End with: <<SIGNAL:ARCHITECT_REVIEW_COMPLETE>>"
-
-    local output_file=$(mktemp)
+    local output_file="$(ensure_tmpdir)/review_output.txt"
 
     log_info "Running architect agent..."
 
-    setsid env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT \
-        claude --model "$MODEL_PRIMARY" \
-        --permission-mode acceptEdits \
-        --allowedTools "$allowed_tools" \
-        --print \
-        -p "$context
-$prompt" > "$output_file" 2>&1 &
+    AGENT_OUTPUT_FILE="$output_file" AGENT_MODE="review" \
+        run_agent_process "architect" "$MODEL_PRIMARY" "$allowed_tools" "" \
+        "$context
+$prompt"
 
-    local agent_pid=$!
-    local elapsed=0
-
-    while kill -0 "$agent_pid" 2>/dev/null; do
-        sleep 5
-        elapsed=$((elapsed + 5))
-        [[ $elapsed -ge $AGENT_TIMEOUT ]] && {
-            log_warning "Agent timed out"
-            kill -TERM -"$agent_pid" 2>/dev/null || kill -TERM "$agent_pid" 2>/dev/null
-            break
-        }
-    done
-
-    wait "$agent_pid" 2>/dev/null || true
-
-    if check_signal "ARCHITECT_REVIEW_COMPLETE" "$output_file"; then
-        log_success "Architecture review complete"
-    else
-        log_warning "Review may be incomplete"
+    # Save review output to persistent log
+    local review_log="$DATA_DIR/logs/review-$(date +%Y%m%dT%H%M%S).md"
+    if [[ -s "$output_file" ]]; then
+        cp "$output_file" "$review_log"
+        log_info "Review output saved to: $review_log"
     fi
 
-    rm -f "$output_file"
+    # Print the review output
+    if [[ -s "$output_file" ]]; then
+        echo ""
+        echo "═══════════════════════════════════════════"
+        echo "  ARCHITECTURE REVIEW OUTPUT"
+        echo "═══════════════════════════════════════════"
+        echo ""
+        cat "$output_file"
+        echo ""
+    fi
+
+    if ! check_result; then
+        exit 1
+    fi
 }
 
 cmd_metrics() {
@@ -604,12 +728,15 @@ cmd_metrics() {
     local backlog_file="$BACKLOG_DIR/backlog.json"
     local bugs_file="$BACKLOG_DIR/bugs.json"
 
+    local ready_backlog
+    ready_backlog=$(count_ready_items "$backlog_file")
+    local ready_bugs
+    ready_bugs=$(count_ready_items "$bugs_file")
+
     if [[ "$json_output" == "true" ]]; then
         local completed=$([[ -f "$sprints_file" ]] && wc -l < "$sprints_file" | tr -d ' ' || echo 0)
         local backlog_total=$(jq '.items | length' "$backlog_file" 2>/dev/null || echo 0)
         local bugs_total=$(jq '.items | length' "$bugs_file" 2>/dev/null || echo 0)
-        local ready_backlog=$(jq '[.items[] | select(.readyForSprint == true and .passes != true)] | length' "$backlog_file" 2>/dev/null || echo 0)
-        local ready_bugs=$(jq '[.items[] | select(.readyForSprint == true and .passes != true)] | length' "$bugs_file" 2>/dev/null || echo 0)
 
         cat <<EOF
 {
@@ -626,88 +753,285 @@ EOF
         echo ""
         echo "Backlog:"
         echo "  Total items: $(jq '.items | length' "$backlog_file" 2>/dev/null || echo 0)"
-        echo "  Ready for sprint: $(jq '[.items[] | select(.readyForSprint == true and .passes != true)] | length' "$backlog_file" 2>/dev/null || echo 0)"
+        echo "  Ready for sprint: $ready_backlog"
         echo ""
         echo "Bugs/Tech Debt:"
         echo "  Total items: $(jq '.items | length' "$bugs_file" 2>/dev/null || echo 0)"
-        echo "  Ready for sprint: $(jq '[.items[] | select(.readyForSprint == true and .passes != true)] | length' "$bugs_file" 2>/dev/null || echo 0)"
+        echo "  Ready for sprint: $ready_bugs"
     fi
 }
 
 cmd_init() {
-    log_header "Initializing aishore"
+    log_header "aishore setup wizard"
+    echo ""
+    echo "  This will walk you through setting up aishore for your project."
+    echo "  Press Enter to accept defaults shown in [brackets]."
+    echo ""
 
+    local reinit=false
     if [[ -f "$BACKLOG_DIR/backlog.json" ]]; then
         log_warning "aishore already initialized (backlog.json exists)"
-        read -p "Reinitialize? [y/N] " c
+        read -p "  Reinitialize? This preserves existing backlogs. [y/N] " c
         [[ $c != [yY] ]] && exit 0
+        reinit=true
+        echo ""
     fi
+
+    # ── Step 1: Prerequisites ──────────────────────────────────────────
+    log_subheader "Step 1/6 — Prerequisites"
+
+    # Check git
+    if git -C "$PROJECT_ROOT" rev-parse --is-inside-work-tree &>/dev/null; then
+        log_success "Git repository detected"
+    else
+        log_error "Not a git repository"
+        echo "  aishore tracks work via git commits. Please initialize git first:"
+        echo "    git init && git add -A && git commit -m 'initial commit'"
+        exit 1
+    fi
+
+    # Check Claude CLI
+    if command -v claude &>/dev/null; then
+        log_success "Claude CLI found ($(claude --version 2>/dev/null || echo 'installed'))"
+    else
+        log_error "Claude CLI not found"
+        echo "  Install it: https://docs.anthropic.com/en/docs/claude-code"
+        exit 1
+    fi
+
+    # Check jq (used for backlog manipulation)
+    if command -v jq &>/dev/null; then
+        log_success "jq found"
+    else
+        log_warning "jq not found — some features may be limited"
+        echo "  Recommended: install jq (https://jqlang.github.io/jq/)"
+    fi
+
+    echo ""
+
+    # ── Step 2: Project info ───────────────────────────────────────────
+    log_subheader "Step 2/6 — Project"
+
+    # Detect project name from package.json, Cargo.toml, or directory
+    local detected_name=""
+    if [[ -f "$PROJECT_ROOT/package.json" ]] && command -v jq &>/dev/null; then
+        detected_name=$(jq -r '.name // empty' "$PROJECT_ROOT/package.json" 2>/dev/null || true)
+    fi
+    if [[ -z "$detected_name" && -f "$PROJECT_ROOT/Cargo.toml" ]]; then
+        detected_name=$(grep -m1 '^name' "$PROJECT_ROOT/Cargo.toml" 2>/dev/null | sed 's/.*= *"\(.*\)"/\1/' || true)
+    fi
+    [[ -z "$detected_name" ]] && detected_name=$(basename "$PROJECT_ROOT")
+
+    read -p "  Project name [$detected_name]: " project_name
+    project_name="${project_name:-$detected_name}"
+
+    echo ""
+
+    # ── Step 3: Validation command ─────────────────────────────────────
+    log_subheader "Step 3/6 — Validation"
+    echo "  After each sprint, aishore runs a command to verify the code works."
+    echo "  Examples: 'npm run build', 'cargo test', 'make check'"
+    echo ""
+
+    # Detect likely validation command
+    local detected_validate=""
+    if [[ -f "$PROJECT_ROOT/package.json" ]]; then
+        if command -v jq &>/dev/null; then
+            local has_test=$(jq -r '.scripts.test // empty' "$PROJECT_ROOT/package.json" 2>/dev/null || true)
+            local has_build=$(jq -r '.scripts.build // empty' "$PROJECT_ROOT/package.json" 2>/dev/null || true)
+            local has_check=$(jq -r '.scripts.check // empty' "$PROJECT_ROOT/package.json" 2>/dev/null || true)
+            if [[ -n "$has_check" ]]; then
+                detected_validate="npm run check"
+            elif [[ -n "$has_build" && -n "$has_test" ]]; then
+                detected_validate="npm run build && npm test"
+            elif [[ -n "$has_build" ]]; then
+                detected_validate="npm run build"
+            elif [[ -n "$has_test" ]]; then
+                detected_validate="npm test"
+            fi
+        fi
+    elif [[ -f "$PROJECT_ROOT/Cargo.toml" ]]; then
+        detected_validate="cargo test"
+    elif [[ -f "$PROJECT_ROOT/Makefile" ]]; then
+        detected_validate="make test"
+    elif [[ -f "$PROJECT_ROOT/pyproject.toml" || -f "$PROJECT_ROOT/setup.py" ]]; then
+        detected_validate="python -m pytest"
+    elif [[ -f "$PROJECT_ROOT/go.mod" ]]; then
+        detected_validate="go test ./..."
+    fi
+
+    if [[ -n "$detected_validate" ]]; then
+        read -p "  Validation command [$detected_validate]: " validate_cmd
+        validate_cmd="${validate_cmd:-$detected_validate}"
+    else
+        read -p "  Validation command (or leave empty to skip): " validate_cmd
+    fi
+
+    echo ""
+
+    # ── Step 4: Product requirements ───────────────────────────────────
+    log_subheader "Step 4/6 — Product requirements"
+    echo "  aishore works best when agents have context about what you're building."
+    echo ""
+
+    # Check for existing requirements docs
+    local prd_found=""
+    for candidate in \
+        "$PROJECT_ROOT/product.md" "$PROJECT_ROOT/PRODUCT.md" \
+        "$PROJECT_ROOT/prd.md" "$PROJECT_ROOT/PRD.md" \
+        "$PROJECT_ROOT/docs/product.md" "$PROJECT_ROOT/docs/PRD.md" \
+        "$PROJECT_ROOT/docs/WEBSITE_BRIEF.md" \
+        "$PROJECT_ROOT/README.md"; do
+        if [[ -f "$candidate" ]]; then
+            prd_found="$candidate"
+            break
+        fi
+    done
+
+    local claude_md=$(find_claude_md)
+
+    if [[ -n "$claude_md" ]]; then
+        log_success "Found $claude_md — agents will use this automatically"
+    else
+        log_info "No CLAUDE.md found"
+        echo "  Recommended: create CLAUDE.md in your project root."
+        echo "  It tells agents about your tech stack, conventions, and commands."
+        echo "  See: https://docs.anthropic.com/en/docs/claude-code/memory"
+    fi
+
+    if [[ -n "$prd_found" ]]; then
+        log_success "Found requirements doc: $prd_found"
+    else
+        log_info "No product requirements doc found (product.md, prd.md, etc.)"
+        echo "  Tip: a product.md helps the product-owner agent prioritize features."
+        echo "  Even a short description of what you're building is useful."
+    fi
+
+    echo ""
+
+    # ── Step 5: Create files ───────────────────────────────────────────
+    log_subheader "Step 5/6 — Scaffolding"
 
     # Create directories
     mkdir -p "$STATUS_DIR" "$LOGS_DIR" "$ARCHIVE_DIR" "$BACKLOG_DIR/archive" "$AGENTS_DIR"
+    log_success "Created directory structure"
 
-    # Create minimal config (optional, for overrides only)
-    [[ ! -f "$CONFIG_FILE" ]] && cat > "$CONFIG_FILE" << 'EOF'
-# aishore configuration (optional - sensible defaults are used)
-# Uncomment and modify only what you need to override
+    # Write config.yaml
+    if [[ ! -f "$CONFIG_FILE" || "$reinit" == true ]]; then
+        cat > "$CONFIG_FILE" << EOF
+# aishore configuration
 
-# validation:
-#   command: "npm run type-check && npm run lint && npm test"
-#   timeout: 120
+project:
+  name: "$project_name"
+
+validation:
+  command: "$validate_cmd"
+  timeout: 120
 
 # models:
 #   primary: "claude-opus-4-5-20251101"
 #   fast: "claude-sonnet-4-20250514"
 
 # agent:
-#   timeout: 3600
+#   timeout: 600
 EOF
+        log_success "Wrote .aishore/config.yaml"
+    else
+        log_info "Kept existing .aishore/config.yaml"
+    fi
 
-    # Create backlog if missing
-    [[ ! -f "$BACKLOG_DIR/backlog.json" ]] && cat > "$BACKLOG_DIR/backlog.json" << 'EOF'
+    # Create backlogs (never overwrite existing)
+    if [[ ! -f "$BACKLOG_DIR/backlog.json" ]]; then
+        cat > "$BACKLOG_DIR/backlog.json" << 'EOF'
 {
   "description": "Feature backlog",
   "items": []
 }
 EOF
+        log_success "Created backlog/backlog.json"
+    else
+        log_info "Kept existing backlog/backlog.json ($(jq '.items | length' "$BACKLOG_DIR/backlog.json" 2>/dev/null || echo '?') items)"
+    fi
 
-    # Create bugs.json if missing
-    [[ ! -f "$BACKLOG_DIR/bugs.json" ]] && cat > "$BACKLOG_DIR/bugs.json" << 'EOF'
+    if [[ ! -f "$BACKLOG_DIR/bugs.json" ]]; then
+        cat > "$BACKLOG_DIR/bugs.json" << 'EOF'
 {
   "description": "Bugs and tech debt",
   "items": []
 }
 EOF
+        log_success "Created backlog/bugs.json"
+    else
+        log_info "Kept existing backlog/bugs.json"
+    fi
 
-    # Create sprint.json if missing
-    [[ ! -f "$BACKLOG_DIR/sprint.json" ]] && echo '{"sprintId": null, "status": "idle", "item": null}' > "$BACKLOG_DIR/sprint.json"
+    if [[ ! -f "$BACKLOG_DIR/sprint.json" ]]; then
+        echo '{"sprintId": null, "status": "idle", "item": null}' > "$BACKLOG_DIR/sprint.json"
+        log_success "Created backlog/sprint.json"
+    else
+        log_info "Kept existing backlog/sprint.json"
+    fi
 
-    # Create archive file
     touch "$ARCHIVE_DIR/sprints.jsonl"
 
     # Update .gitignore
     local gitignore="$PROJECT_ROOT/.gitignore"
     if [[ -f "$gitignore" ]]; then
         if ! grep -q ".aishore/data/logs/" "$gitignore" 2>/dev/null; then
-            echo -e "\n# aishore runtime files\n.aishore/data/logs/\n.aishore/data/status/result.json" >> "$gitignore"
+            echo -e "\n# aishore runtime files\n.aishore/data/logs/\n.aishore/data/status/result.json\n.aishore/data/status/.item_source\n.aishore/data/status/.aishore.lock" >> "$gitignore"
+            log_success "Updated .gitignore"
+        else
+            log_info ".gitignore already configured"
         fi
-    fi
-
-    log_success "aishore initialized!"
-    echo ""
-    echo "Next steps:"
-    echo "  1. Add features to backlog/backlog.json"
-    echo "  2. Run: .aishore/aishore groom"
-    echo "  3. Run: .aishore/aishore run"
-    echo ""
-    echo "Optional: Edit .aishore/config.yaml to override defaults"
-
-    local claude_md=$(find_claude_md)
-    if [[ -n "$claude_md" ]]; then
-        log_success "Found $claude_md - will be used automatically"
     else
-        log_info "Tip: Create CLAUDE.md in project root for project context"
+        cat > "$gitignore" << 'EOF'
+# aishore runtime files
+.aishore/data/logs/
+.aishore/data/status/result.json
+.aishore/data/status/.item_source
+.aishore/data/status/.aishore.lock
+EOF
+        log_success "Created .gitignore"
     fi
+
+    echo ""
+
+    # ── Step 6: Summary & next steps ───────────────────────────────────
+    log_subheader "Step 6/6 — Ready"
+    echo ""
+    log_success "aishore initialized for $project_name"
+    echo ""
+
+    # Status summary
+    echo "  Project:      $project_name"
+    echo "  Validation:   ${validate_cmd:-<none>}"
+    echo "  CLAUDE.md:    ${claude_md:-<not found>}"
+    echo "  Requirements: ${prd_found:-<not found>}"
+    echo ""
+
+    # Contextual next steps based on what's missing
+    echo -e "${CYAN}Next steps:${NC}"
+    local step=1
+
+    if [[ -z "$claude_md" ]]; then
+        echo "  $step. Create CLAUDE.md with your project's tech stack and conventions"
+        step=$((step + 1))
+    fi
+
+    local item_count=0
+    if command -v jq &>/dev/null && [[ -f "$BACKLOG_DIR/backlog.json" ]]; then
+        item_count=$(jq '.items | length' "$BACKLOG_DIR/backlog.json" 2>/dev/null || echo 0)
+    fi
+
+    if [[ "$item_count" -eq 0 ]]; then
+        echo "  $step. Add features to backlog/backlog.json (or run: .aishore/aishore groom --backlog)"
+        step=$((step + 1))
+        echo "  $step. Groom items for sprint readiness: .aishore/aishore groom"
+        step=$((step + 1))
+    fi
+
+    echo "  $step. Run your first sprint: .aishore/aishore run"
+    echo ""
 }
 
 cmd_version() {
@@ -718,14 +1042,21 @@ cmd_update() {
     local repo_url="https://raw.githubusercontent.com/simonplant/aishore/main"
     local dry_run=false
     local force=false
+    local no_verify=false
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --dry-run|--check) dry_run=true; shift ;;
             --force) force=true; shift ;;
+            --no-verify) no_verify=true; shift ;;
             *) shift ;;
         esac
     done
+
+    if [[ "$no_verify" == "true" && "$force" != "true" ]]; then
+        log_error "--no-verify requires --force"
+        exit 1
+    fi
 
     log_header "aishore Update"
     echo "Current version: $AISHORE_VERSION"
@@ -751,7 +1082,7 @@ cmd_update() {
     }
 
     local remote_version
-    remote_version=$(echo "$remote_script" | grep -E '^AISHORE_VERSION=' | head -1 | cut -d'"' -f2)
+    remote_version=$(echo "$remote_script" | grep -E '^AISHORE_VERSION=' | head -1 | cut -d'"' -f2 || true)
 
     if [[ -z "$remote_version" ]]; then
         log_error "Could not determine remote version"
@@ -789,36 +1120,134 @@ cmd_update() {
         return 0
     fi
 
-    # Update aishore script
-    log_info "Updating aishore..."
-    echo "$remote_script" > "$AISHORE_ROOT/aishore"
-    chmod +x "$AISHORE_ROOT/aishore"
-
-    # Update gitignore-entries.txt
-    log_info "Updating gitignore-entries.txt..."
-    $fetch_cmd "$repo_url/.aishore/gitignore-entries.txt" > "$AISHORE_ROOT/gitignore-entries.txt" 2>/dev/null || \
-        log_warning "Could not update gitignore-entries.txt"
-
-    # Update agent prompts
-    local updated=0
-    local failed=0
-    for agent in developer validator tech-lead product-owner architect; do
-        if $fetch_cmd "$repo_url/.aishore/agents/$agent.md" > "$AGENTS_DIR/$agent.md" 2>/dev/null; then
-            ((updated++))
+    # Fetch checksums manifest
+    log_info "Fetching checksums..."
+    local checksums_content=""
+    checksums_content=$($fetch_cmd "$repo_url/.aishore/checksums.sha256" 2>/dev/null) || {
+        if [[ "$no_verify" == "true" ]]; then
+            log_warning "Skipping verification (--no-verify)"
+            checksums_content=""
         else
-            log_warning "Could not update $agent.md"
-            ((failed++))
+            log_error "Cannot fetch checksums — aborting (use --force --no-verify to skip)"
+            exit 1
+        fi
+    }
+
+    get_expected_checksum() {
+        local filepath="$1"
+        [[ -z "$checksums_content" ]] && { echo ""; return 0; }
+        echo "$checksums_content" | grep -F "$filepath" | awk '{print $1}' | head -1 || true
+    }
+
+    verify_or_abort() {
+        local file="$1" label="$2" checksum_key="$3"
+        local expected
+        expected=$(get_expected_checksum "$checksum_key") || true
+        if [[ -n "$expected" ]]; then
+            if verify_checksum "$file" "$expected"; then
+                log_success "Checksum verified: $label"
+            else
+                log_error "Checksum mismatch for $label — file may be corrupted or tampered"
+                return 1
+            fi
+        elif [[ -n "$checksums_content" ]]; then
+            if [[ "$no_verify" == "true" ]]; then
+                log_warning "No checksum entry for $label — skipping (--no-verify)"
+            else
+                log_error "No checksum entry for $label — aborting (use --force --no-verify to skip)"
+                return 1
+            fi
+        fi
+        return 0
+    }
+
+    # ── Phase 1: Fetch & verify all files into staging ──
+    local staging_dir="$(ensure_tmpdir)/update_staging"
+    mkdir -p "$staging_dir/agents"
+    local all_verified=true
+
+    # Stage aishore script
+    log_info "Fetching aishore..."
+    echo "$remote_script" > "$staging_dir/aishore"
+    if ! verify_or_abort "$staging_dir/aishore" "aishore" ".aishore/aishore"; then
+        all_verified=false
+    fi
+
+    # Stage gitignore-entries.txt
+    log_info "Fetching gitignore-entries.txt..."
+    if $fetch_cmd "$repo_url/.aishore/gitignore-entries.txt" > "$staging_dir/gitignore-entries.txt" 2>/dev/null; then
+        if ! verify_or_abort "$staging_dir/gitignore-entries.txt" "gitignore-entries.txt" ".aishore/gitignore-entries.txt"; then
+            all_verified=false
+        fi
+    else
+        log_error "Could not fetch gitignore-entries.txt"
+        all_verified=false
+    fi
+
+    # Stage agent prompts
+    for agent in developer validator tech-lead product-owner architect; do
+        log_info "Fetching $agent.md..."
+        if $fetch_cmd "$repo_url/.aishore/agents/$agent.md" > "$staging_dir/agents/$agent.md" 2>/dev/null; then
+            if ! verify_or_abort "$staging_dir/agents/$agent.md" "$agent.md" ".aishore/agents/$agent.md"; then
+                all_verified=false
+            fi
+        else
+            log_error "Could not fetch $agent.md"
+            all_verified=false
         fi
     done
-    log_info "Updated $updated agent prompts"
+
+    # ── Phase 2: Install (only if all verified) ──
+    if [[ "$all_verified" != "true" ]]; then
+        log_error "Verification failed — no files were modified"
+        exit 1
+    fi
+
+    log_info "All files verified — installing..."
+    mv "$staging_dir/aishore" "$AISHORE_ROOT/aishore"
+    chmod +x "$AISHORE_ROOT/aishore"
+    mv "$staging_dir/gitignore-entries.txt" "$AISHORE_ROOT/gitignore-entries.txt"
+    for agent in developer validator tech-lead product-owner architect; do
+        mv "$staging_dir/agents/$agent.md" "$AGENTS_DIR/$agent.md"
+    done
 
     echo ""
-    log_success "Updated to $remote_version"
+    log_success "Updated to $remote_version (7 files installed)"
+}
 
-    if [[ $failed -gt 0 ]]; then
-        echo ""
-        log_warning "$failed files failed to update"
+cmd_checksums() {
+    cd "$PROJECT_ROOT"
+
+    local checksum_file="$AISHORE_ROOT/checksums.sha256"
+    local files=(
+        .aishore/aishore
+        .aishore/gitignore-entries.txt
+    )
+
+    # Add all agent prompts
+    for f in "$AGENTS_DIR"/*.md; do
+        [[ -f "$f" ]] && files+=(".aishore/agents/$(basename "$f")")
+    done
+
+    # Generate checksums
+    local hash_cmd=""
+    if command -v sha256sum &>/dev/null; then
+        hash_cmd="sha256sum"
+    elif command -v shasum &>/dev/null; then
+        hash_cmd="shasum -a 256"
+    else
+        log_error "No sha256sum or shasum found"
+        exit 1
     fi
+
+    local tmp="$(ensure_tmpdir)/checksums_gen.txt"
+    for f in "${files[@]}"; do
+        [[ -f "$f" ]] && $hash_cmd "$f" >> "$tmp"
+    done
+
+    mv "$tmp" "$checksum_file"
+    log_success "Updated checksums.sha256 (${#files[@]} files)"
+    cat "$checksum_file"
 }
 
 cmd_help() {
@@ -846,8 +1275,10 @@ Commands:
     --dry-run       Check for updates without applying
     --check         Alias for --dry-run
     --force         Update even if already on latest version
+    --no-verify     Skip checksum verification (use with --force)
 
-  init              Initialize aishore in current project
+  checksums         Regenerate checksums.sha256 for update verification
+  init              Setup wizard — checks prerequisites, configures project
   version           Show version
   help              Show this help
 
@@ -870,6 +1301,12 @@ Environment Variables:
   AISHORE_MODEL_PRIMARY     Primary model (default: claude-opus-4-5-20251101)
   AISHORE_MODEL_FAST        Fast model (default: claude-sonnet-4-20250514)
   AISHORE_AGENT_TIMEOUT     Agent timeout in seconds (default: 3600)
+
+Trust Model:
+  The 'update' command fetches from GitHub and verifies SHA-256 checksums.
+  If checksums cannot be fetched, the update aborts unless --force --no-verify
+  is passed. This ensures integrity but does NOT verify authorship — you trust
+  the upstream repository and your network path to it.
 EOF
 }
 
@@ -889,6 +1326,7 @@ main() {
         review)  cmd_review "$@" ;;
         metrics) cmd_metrics "$@" ;;
         update)  cmd_update "$@" ;;
+        checksums) cmd_checksums ;;
         init)    cmd_init "$@" ;;
         version|-v|--version) cmd_version ;;
         help|-h|--help) cmd_help ;;

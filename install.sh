@@ -123,7 +123,7 @@ install_aishore() {
     echo ""
 
     # Create directory structure
-    mkdir -p "$AISHORE_DIR"/{agents,data/{archive,logs,status}}
+    mkdir -p "$AISHORE_DIR"/{agents,data/{logs,status}}
 
     # Download files
     local failed=0
@@ -144,7 +144,6 @@ install_aishore() {
     chmod +x "$AISHORE_DIR/aishore"
 
     # Create data directory placeholders
-    touch "$AISHORE_DIR/data/archive/.gitkeep"
     touch "$AISHORE_DIR/data/logs/.gitkeep"
     touch "$AISHORE_DIR/data/status/.gitkeep"
 

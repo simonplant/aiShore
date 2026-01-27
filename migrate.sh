@@ -316,7 +316,7 @@ update_gitignore_for_backlog() {
 
         # Add backlog archive entry if not present
         if ! grep -q ".aishore/data/logs/" "$gitignore" 2>/dev/null; then
-            local content=$'\n# aishore runtime (v0.1.2+)\n.aishore/data/logs/\n.aishore/data/status/'
+            local content=$'\n# aishore runtime files\n.aishore/data/logs/\n.aishore/data/status/result.json\n.aishore/data/status/.item_source'
             do_append "$gitignore" "$content"
             success "Added runtime entries to .gitignore"
         fi
@@ -332,7 +332,6 @@ migrate_from_legacy() {
 
     # Create new .aishore structure
     do_mkdir "$OLD_DIR/agents"
-    do_mkdir "$OLD_DIR/data/archive"
     do_mkdir "$OLD_DIR/data/logs"
     do_mkdir "$OLD_DIR/data/status"
 
@@ -366,19 +365,18 @@ migrate_from_legacy() {
         fi
     done
 
-    # Migrate archives
+    # Migrate archives to backlog/archive/ (where the CLI reads them)
     for file in done.jsonl sprints.jsonl failed.jsonl; do
         if [[ -f "$LEGACY_DIR/plan/archive/$file" ]]; then
-            do_copy "$LEGACY_DIR/plan/archive/$file" "$OLD_DIR/data/archive/$file"
+            do_copy "$LEGACY_DIR/plan/archive/$file" "$BACKLOG_DIR/archive/$file"
             success "Migrated archive/$file"
         elif [[ -f "$LEGACY_DIR/plan/.archive/$file" ]]; then
-            do_copy "$LEGACY_DIR/plan/.archive/$file" "$OLD_DIR/data/archive/$file"
+            do_copy "$LEGACY_DIR/plan/.archive/$file" "$BACKLOG_DIR/archive/$file"
             success "Migrated .archive/$file"
         fi
     done
 
     # Create .gitkeep files
-    do_touch "$OLD_DIR/data/archive/.gitkeep"
     do_touch "$OLD_DIR/data/logs/.gitkeep"
     do_touch "$OLD_DIR/data/status/.gitkeep"
     do_touch "$BACKLOG_DIR/archive/.gitkeep"
@@ -510,7 +508,7 @@ main() {
     if [[ "$DRY_RUN" == "true" ]]; then
         echo -e "${BLUE}  aishore Migration Tool ${CYAN}(DRY RUN)${NC}"
     else
-        echo -e "${BLUE}  aishore Migration Tool (v0.1.2)${NC}"
+        echo -e "${BLUE}  aishore Migration Tool (v0.1.3)${NC}"
     fi
     echo -e "${BLUE}════════════════════════════════════════${NC}"
     echo ""
