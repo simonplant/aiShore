@@ -707,7 +707,8 @@ $(build_completion_contract)"
 $prompt"
 
     # Save review output to persistent log
-    local review_log="$DATA_DIR/logs/review-$(date +%Y%m%dT%H%M%S).md"
+    local review_log
+    review_log="$DATA_DIR/logs/review-$(date +%Y%m%dT%H%M%S).md"
     if [[ -s "$output_file" ]]; then
         cp "$output_file" "$review_log"
         log_info "Review output saved to: $review_log"
