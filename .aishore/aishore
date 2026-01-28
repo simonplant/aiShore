@@ -743,9 +743,12 @@ cmd_groom() {
     log_info "Current ready buffer: $((ready_backlog + ready_bugs)) items ($ready_backlog features, $ready_bugs bugs)"
     echo ""
 
+    local context_args="@$BACKLOG_DIR/backlog.json @$BACKLOG_DIR/bugs.json"
+    [[ -f "$ARCHIVE_DIR/sprints.jsonl" ]] && context_args="$context_args @$ARCHIVE_DIR/sprints.jsonl"
+
     log_info "Running $agent agent..."
 
-    run_agent "$agent" "groom" "$MODEL_PRIMARY" "@$BACKLOG_DIR/backlog.json @$BACKLOG_DIR/bugs.json"
+    run_agent "$agent" "groom" "$MODEL_PRIMARY" "$context_args"
 
     if ! check_result; then
         exit 1
@@ -1035,7 +1038,7 @@ validation:
 #   fast: "claude-sonnet-4-20250514"
 
 # agent:
-#   timeout: 600
+#   timeout: 3600
 EOF
         log_success "Wrote .aishore/config.yaml"
     else
@@ -1405,6 +1408,8 @@ Environment Variables:
   AISHORE_MODEL_PRIMARY     Primary model (default: claude-opus-4-5-20251101)
   AISHORE_MODEL_FAST        Fast model (default: claude-sonnet-4-20250514)
   AISHORE_AGENT_TIMEOUT     Agent timeout in seconds (default: 3600)
+  AISHORE_VALIDATE_CMD      Validation command to run after implementation
+  AISHORE_VALIDATE_TIMEOUT  Validation command timeout in seconds (default: 120)
 
 Trust Model:
   The 'update' command fetches from GitHub and verifies SHA-256 checksums.

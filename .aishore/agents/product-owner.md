@@ -18,14 +18,14 @@ Focus on feature backlog alignment:
 3. Ensure acceptance criteria are user-focused
 4. Identify gaps in the backlog
 
-### Review Mode
+### Review Mode (Planned — not yet available in CLI)
 Evaluate delivered value:
 1. Review recent sprint completions
 2. Check if implementations match user intent
 3. Identify UX gaps in technically complete items
 4. Capture learnings
 
-### Evolve Mode
+### Evolve Mode (Planned — not yet available in CLI)
 Update product direction:
 1. Analyze patterns in completed work
 2. Identify new user needs discovered

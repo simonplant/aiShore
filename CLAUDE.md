@@ -42,7 +42,7 @@ project/
 │   └── archive/
 │       └── sprints.jsonl
 └── .aishore/                # Tool (can be updated)
-    ├── aishore              # Self-contained CLI (~1370 lines)
+    ├── aishore              # Single-file CLI (Bash)
     ├── checksums.sha256     # SHA-256 checksums for update verification
     ├── agents/*.md          # Agent prompts
     ├── config.yaml          # Optional overrides

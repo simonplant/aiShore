@@ -99,7 +99,7 @@ project/
 │   └── archive/          # Completed sprint history
 │       └── sprints.jsonl
 └── .aishore/             # Tool (this is what gets updated)
-    ├── aishore           # Self-contained CLI (~1370 lines)
+    ├── aishore           # Single-file CLI (Bash)
     ├── checksums.sha256  # SHA-256 checksums for update verification
     ├── config.yaml       # Optional overrides
     ├── agents/           # Agent prompts (developer, validator, tech-lead, architect, product-owner)

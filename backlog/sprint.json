@@ -1,24 +1,28 @@
 {
-  "sprintId": "sprint-1769633364",
-  "startedAt": "2026-01-28T13:49:24-07:00",
+  "sprintId": "sprint-1769633572",
+  "startedAt": "2026-01-28T13:52:52-07:00",
   "status": "completed",
   "item": {
-    "id": "BUG-008",
-    "title": "pick_item returns different field sets for specific vs auto pick",
+    "id": "BUG-009",
+    "title": "Documentation drift: timeout, help text, agent modes, dates",
     "sourceBacklog": "bugs.json",
     "steps": [
-      "Step 1: Make both jq queries in pick_item() select the same fields: {id, title, description, steps, acceptanceCriteria, priority, status, passes}",
-      "Step 2: Use defaults in the jq query for status and passes: (.status // \"todo\") and (.passes // false)",
-      "Step 3: Verify create_sprint handles the consistent shape correctly"
+      "Step 1: In cmd_init(), change the commented agent timeout from 600 to 3600 in the config template",
+      "Step 2: In cmd_help(), add AISHORE_VALIDATE_CMD and AISHORE_VALIDATE_TIMEOUT to the env vars section",
+      "Step 3: In product-owner.md, remove or clearly mark Review and Evolve mode sections as future/planned since the CLI only supports groom mode",
+      "Step 4: In cmd_groom(), pass archive/sprints.jsonl as context when it exists (to match the product-owner.md prompt)",
+      "Step 5: Update CLAUDE.md and CONTRIBUTING.md line count reference from ~1370 to something more durable like 'single file CLI' without a specific count"
     ],
     "acceptanceCriteria": [
-      "pick_item returns the same JSON shape for both specific-ID and auto-pick paths",
-      "Both paths include id, title, description, steps, acceptanceCriteria, priority, status, passes",
-      "create_sprint works correctly with either path"
+      "Config template in init shows correct default timeout of 3600",
+      "Help text lists all 5 environment variables",
+      "Product owner agent prompt only documents the groom mode (or clearly marks others as planned)",
+      "Archive file is passed as context to groom when it exists",
+      "No specific line count claims in documentation"
     ],
-    "startedAt": "2026-01-28T13:49:24-07:00",
+    "startedAt": "2026-01-28T13:52:52-07:00",
     "status": "passed",
-    "completedAt": "2026-01-28T13:52:52-07:00"
+    "completedAt": "2026-01-28T13:57:40-07:00"
   },
-  "completedAt": "2026-01-28T13:52:52-07:00"
+  "completedAt": "2026-01-28T13:57:40-07:00"
 }

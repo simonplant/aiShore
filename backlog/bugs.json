@@ -212,9 +212,10 @@
         "Archive file is passed as context to groom when it exists",
         "No specific line count claims in documentation"
       ],
-      "status": "todo",
-      "passes": false,
-      "readyForSprint": true
+      "status": "done",
+      "passes": true,
+      "readyForSprint": false,
+      "completedAt": "2026-01-28T13:57:40-07:00"
     },
     {
       "id": "BUG-010",
