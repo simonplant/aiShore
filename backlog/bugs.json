@@ -257,9 +257,10 @@
         "Permissions are scoped to what the project actually needs",
         "File still allows the documented operations (shellcheck, git, aishore commands)"
       ],
-      "status": "todo",
-      "passes": false,
-      "readyForSprint": true
+      "status": "done",
+      "passes": true,
+      "readyForSprint": false,
+      "completedAt": "2026-01-28T13:59:53-07:00"
     }
   ]
 }

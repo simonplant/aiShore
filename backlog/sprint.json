@@ -1,28 +1,27 @@
 {
-  "sprintId": "sprint-1769633572",
-  "startedAt": "2026-01-28T13:52:52-07:00",
+  "sprintId": "sprint-1769633860",
+  "startedAt": "2026-01-28T13:57:40-07:00",
   "status": "completed",
   "item": {
-    "id": "BUG-009",
-    "title": "Documentation drift: timeout, help text, agent modes, dates",
+    "id": "BUG-011",
+    "title": "Clean up .claude/settings.local.json",
     "sourceBacklog": "bugs.json",
     "steps": [
-      "Step 1: In cmd_init(), change the commented agent timeout from 600 to 3600 in the config template",
-      "Step 2: In cmd_help(), add AISHORE_VALIDATE_CMD and AISHORE_VALIDATE_TIMEOUT to the env vars section",
-      "Step 3: In product-owner.md, remove or clearly mark Review and Evolve mode sections as future/planned since the CLI only supports groom mode",
-      "Step 4: In cmd_groom(), pass archive/sprints.jsonl as context when it exists (to match the product-owner.md prompt)",
-      "Step 5: Update CLAUDE.md and CONTRIBUTING.md line count reference from ~1370 to something more durable like 'single file CLI' without a specific count"
+      "Step 1: Remove all absolute-path entries that reference /home/simon/dev/aishore/",
+      "Step 2: Replace them with relative-path equivalents where possible (e.g., .aishore/aishore help)",
+      "Step 3: Remove the one-off git commit entry (line 19)",
+      "Step 4: Review whether Bash(bash:*) is needed or if more specific permissions suffice",
+      "Step 5: Remove one-off entries like Bash(while read f), Bash(do du -h), Bash(echo:*), Bash(awk:*) that were accumulated during development"
     ],
     "acceptanceCriteria": [
-      "Config template in init shows correct default timeout of 3600",
-      "Help text lists all 5 environment variables",
-      "Product owner agent prompt only documents the groom mode (or clearly marks others as planned)",
-      "Archive file is passed as context to groom when it exists",
-      "No specific line count claims in documentation"
+      "No absolute paths in settings.local.json",
+      "No one-off command entries",
+      "Permissions are scoped to what the project actually needs",
+      "File still allows the documented operations (shellcheck, git, aishore commands)"
     ],
-    "startedAt": "2026-01-28T13:52:52-07:00",
+    "startedAt": "2026-01-28T13:57:40-07:00",
     "status": "passed",
-    "completedAt": "2026-01-28T13:57:40-07:00"
+    "completedAt": "2026-01-28T13:59:53-07:00"
   },
-  "completedAt": "2026-01-28T13:57:40-07:00"
+  "completedAt": "2026-01-28T13:59:53-07:00"
 }
