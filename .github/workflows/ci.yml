@@ -69,9 +69,16 @@ jobs:
       - name: Check version consistency
         run: |
           file_version=$(cat VERSION)
-          script_version=$(grep -E '^AISHORE_VERSION=' .aishore/aishore | cut -d'"' -f2)
-          if [ "$file_version" != "$script_version" ]; then
-            echo "Version mismatch: VERSION=$file_version, aishore=$script_version"
+          # Check the inline fallback version matches VERSION file
+          fallback_version=$(grep -E 'AISHORE_VERSION=' .aishore/aishore | grep -v '\$' | head -1 | cut -d'"' -f2)
+          if [ "$file_version" != "$fallback_version" ]; then
+            echo "Version mismatch: VERSION=$file_version, fallback=$fallback_version"
+            exit 1
+          fi
+          # Check runtime version matches
+          runtime_version=$(.aishore/aishore version | awk '{print $NF}')
+          if [ "$file_version" != "$runtime_version" ]; then
+            echo "Version mismatch: VERSION=$file_version, runtime=$runtime_version"
             exit 1
           fi
 

@@ -542,7 +542,10 @@ main() {
     if [[ "$DRY_RUN" == "true" ]]; then
         echo -e "${BLUE}  aishore Migration Tool ${CYAN}(DRY RUN)${NC}"
     else
-        echo -e "${BLUE}  aishore Migration Tool (v0.1.3)${NC}"
+        local ver=""
+        [[ -f "$SCRIPT_DIR/VERSION" ]] && ver=$(cat "$SCRIPT_DIR/VERSION")
+        [[ -z "$ver" && -f "$SCRIPT_DIR/.aishore/aishore" ]] && ver=$(grep -E '^AISHORE_VERSION=' "$SCRIPT_DIR/.aishore/aishore" 2>/dev/null | cut -d'"' -f2 || true)
+        echo -e "${BLUE}  aishore Migration Tool${ver:+ (v$ver)}${NC}"
     fi
     echo -e "${BLUE}════════════════════════════════════════${NC}"
     echo ""

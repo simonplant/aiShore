@@ -35,14 +35,19 @@ ensure_tmpdir() {
     echo "$AISHORE_TMPDIR"
 }
 
-AISHORE_VERSION="0.1.4"
-
 # ============================================================================
 # PATHS
 # ============================================================================
 
 AISHORE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$AISHORE_ROOT")"
+
+# Version: read from VERSION file if present, otherwise fall back to inline
+if [[ -f "$PROJECT_ROOT/VERSION" ]]; then
+    AISHORE_VERSION=$(cat "$PROJECT_ROOT/VERSION")
+else
+    AISHORE_VERSION="0.1.4"
+fi
 
 # Tool paths (in .aishore/ - can be updated)
 CONFIG_FILE="$AISHORE_ROOT/config.yaml"
@@ -1185,16 +1190,13 @@ cmd_update() {
         exit 1
     fi
 
-    # Fetch remote version
+    # Fetch remote version from VERSION file
     log_info "Checking for updates..."
-    local remote_script
-    remote_script=$($fetch_cmd "$repo_url/.aishore/aishore" 2>/dev/null) || {
-        log_error "Failed to fetch from $repo_url"
+    local remote_version
+    remote_version=$($fetch_cmd "$repo_url/VERSION" 2>/dev/null | tr -d '[:space:]') || {
+        log_error "Failed to fetch remote version from $repo_url/VERSION"
         exit 1
     }
-
-    local remote_version
-    remote_version=$(echo "$remote_script" | grep -E '^AISHORE_VERSION=' | head -1 | cut -d'"' -f2 || true)
 
     if [[ -z "$remote_version" ]]; then
         log_error "Could not determine remote version"
@@ -1281,7 +1283,10 @@ cmd_update() {
 
     # Stage aishore script
     log_info "Fetching aishore..."
-    echo "$remote_script" > "$staging_dir/aishore"
+    if ! $fetch_cmd "$repo_url/.aishore/aishore" > "$staging_dir/aishore" 2>/dev/null; then
+        log_error "Failed to fetch aishore script"
+        exit 1
+    fi
     if ! verify_or_abort "$staging_dir/aishore" "aishore" ".aishore/aishore"; then
         all_verified=false
     fi
