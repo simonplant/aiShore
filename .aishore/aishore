@@ -1081,21 +1081,27 @@ EOF
 
     # Update .gitignore
     local gitignore="$PROJECT_ROOT/.gitignore"
+    local entries_file="$AISHORE_ROOT/gitignore-entries.txt"
+    local gitignore_content=""
+    if [[ -f "$entries_file" ]]; then
+        # Read entries from file, stripping comment lines and blank lines
+        gitignore_content=$(grep -v '^#' "$entries_file" | grep -v '^$' || true)
+    else
+        # Fallback to hardcoded entries
+        gitignore_content=".aishore/data/logs/
+.aishore/data/status/result.json
+.aishore/data/status/.item_source
+.aishore/data/status/.aishore.lock"
+    fi
     if [[ -f "$gitignore" ]]; then
         if ! grep -q ".aishore/data/logs/" "$gitignore" 2>/dev/null; then
-            echo -e "\n# aishore runtime files\n.aishore/data/logs/\n.aishore/data/status/result.json\n.aishore/data/status/.item_source\n.aishore/data/status/.aishore.lock" >> "$gitignore"
+            printf '\n# aishore runtime files\n%s\n' "$gitignore_content" >> "$gitignore"
             log_success "Updated .gitignore"
         else
             log_info ".gitignore already configured"
         fi
     else
-        cat > "$gitignore" << 'EOF'
-# aishore runtime files
-.aishore/data/logs/
-.aishore/data/status/result.json
-.aishore/data/status/.item_source
-.aishore/data/status/.aishore.lock
-EOF
+        printf '# aishore runtime files\n%s\n' "$gitignore_content" > "$gitignore"
         log_success "Created .gitignore"
     fi
 

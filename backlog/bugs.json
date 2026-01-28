@@ -234,9 +234,10 @@
         "icebox.json is not referenced anywhere in the codebase",
         "Validation detection in migrate.sh matches cmd_init logic for Python and Node.js projects"
       ],
-      "status": "todo",
-      "passes": false,
-      "readyForSprint": true
+      "status": "done",
+      "passes": true,
+      "readyForSprint": false,
+      "completedAt": "2026-01-28T14:05:36-07:00"
     },
     {
       "id": "BUG-011",

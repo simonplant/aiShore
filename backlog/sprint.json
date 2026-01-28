@@ -1,27 +1,25 @@
 {
-  "sprintId": "sprint-1769633860",
-  "startedAt": "2026-01-28T13:57:40-07:00",
+  "sprintId": "sprint-1769633993",
+  "startedAt": "2026-01-28T13:59:53-07:00",
   "status": "completed",
   "item": {
-    "id": "BUG-011",
-    "title": "Clean up .claude/settings.local.json",
+    "id": "BUG-010",
+    "title": "DRY: gitignore entries, validation detection, icebox.json refs",
     "sourceBacklog": "bugs.json",
     "steps": [
-      "Step 1: Remove all absolute-path entries that reference /home/simon/dev/aishore/",
-      "Step 2: Replace them with relative-path equivalents where possible (e.g., .aishore/aishore help)",
-      "Step 3: Remove the one-off git commit entry (line 19)",
-      "Step 4: Review whether Bash(bash:*) is needed or if more specific permissions suffice",
-      "Step 5: Remove one-off entries like Bash(while read f), Bash(do du -h), Bash(echo:*), Bash(awk:*) that were accumulated during development"
+      "Step 1: In cmd_init(), read gitignore entries from .aishore/gitignore-entries.txt instead of hardcoding them",
+      "Step 2: In migrate.sh, read gitignore entries from .aishore/gitignore-entries.txt if available, else use hardcoded fallback",
+      "Step 3: Remove icebox.json from the migration file lists in migrate.sh (lines 231 and 361)",
+      "Step 4: Align validation detection in migrate.sh with cmd_init logic (use python -m pytest, support compound commands)"
     ],
     "acceptanceCriteria": [
-      "No absolute paths in settings.local.json",
-      "No one-off command entries",
-      "Permissions are scoped to what the project actually needs",
-      "File still allows the documented operations (shellcheck, git, aishore commands)"
+      "cmd_init reads gitignore entries from gitignore-entries.txt",
+      "icebox.json is not referenced anywhere in the codebase",
+      "Validation detection in migrate.sh matches cmd_init logic for Python and Node.js projects"
     ],
-    "startedAt": "2026-01-28T13:57:40-07:00",
+    "startedAt": "2026-01-28T13:59:53-07:00",
     "status": "passed",
-    "completedAt": "2026-01-28T13:59:53-07:00"
+    "completedAt": "2026-01-28T14:05:36-07:00"
   },
-  "completedAt": "2026-01-28T13:59:53-07:00"
+  "completedAt": "2026-01-28T14:05:36-07:00"
 }

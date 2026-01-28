@@ -189,21 +189,44 @@ detect_current_structure() {
 }
 
 detect_validation_command() {
-    # Check package.json for common patterns
+    # Check package.json (uses jq for proper JSON parsing, matching cmd_init logic)
     if [[ -f "$PROJECT_ROOT/package.json" ]]; then
-        if grep -q '"type-check"' "$PROJECT_ROOT/package.json" 2>/dev/null; then
-            echo "npm run type-check && npm run lint && npm test"
-            return 0
-        fi
-        if grep -q '"test"' "$PROJECT_ROOT/package.json" 2>/dev/null; then
-            echo "npm test"
-            return 0
+        if command -v jq &>/dev/null; then
+            local has_test has_build has_check
+            has_test=$(jq -r '.scripts.test // empty' "$PROJECT_ROOT/package.json" 2>/dev/null || true)
+            has_build=$(jq -r '.scripts.build // empty' "$PROJECT_ROOT/package.json" 2>/dev/null || true)
+            has_check=$(jq -r '.scripts.check // empty' "$PROJECT_ROOT/package.json" 2>/dev/null || true)
+            if [[ -n "$has_check" ]]; then
+                echo "npm run check"
+                return 0
+            elif [[ -n "$has_build" && -n "$has_test" ]]; then
+                echo "npm run build && npm test"
+                return 0
+            elif [[ -n "$has_build" ]]; then
+                echo "npm run build"
+                return 0
+            elif [[ -n "$has_test" ]]; then
+                echo "npm test"
+                return 0
+            fi
         fi
     fi
 
-    # Check for Python
+    # Check for Rust
+    if [[ -f "$PROJECT_ROOT/Cargo.toml" ]]; then
+        echo "cargo test"
+        return 0
+    fi
+
+    # Check for Make
+    if [[ -f "$PROJECT_ROOT/Makefile" ]]; then
+        echo "make test"
+        return 0
+    fi
+
+    # Check for Python (use python -m pytest for proper module resolution)
     if [[ -f "$PROJECT_ROOT/pyproject.toml" ]] || [[ -f "$PROJECT_ROOT/setup.py" ]]; then
-        echo "pytest"
+        echo "python -m pytest"
         return 0
     fi
 
@@ -228,7 +251,7 @@ migrate_plan_to_backlog() {
     do_mkdir "$BACKLOG_DIR/archive"
 
     # Move backlog files
-    for file in backlog.json bugs.json icebox.json sprint.json definitions.md; do
+    for file in backlog.json bugs.json sprint.json definitions.md; do
         if [[ -f "$OLD_DIR/plan/$file" ]]; then
             do_copy "$OLD_DIR/plan/$file" "$BACKLOG_DIR/$file"
             success "Migrated $file"
@@ -306,6 +329,16 @@ update_gitignore_for_backlog() {
     log "Updating .gitignore..."
 
     local gitignore="$PROJECT_ROOT/.gitignore"
+    local entries_file="$OLD_DIR/gitignore-entries.txt"
+    local gitignore_entries=""
+    if [[ -f "$entries_file" ]]; then
+        gitignore_entries=$(grep -v '^#' "$entries_file" | grep -v '^$' || true)
+    else
+        gitignore_entries=".aishore/data/logs/
+.aishore/data/status/result.json
+.aishore/data/status/.item_source
+.aishore/data/status/.aishore.lock"
+    fi
 
     if [[ -f "$gitignore" ]]; then
         # Remove old .aishore/plan entries if present
@@ -316,7 +349,8 @@ update_gitignore_for_backlog() {
 
         # Add backlog archive entry if not present
         if ! grep -q ".aishore/data/logs/" "$gitignore" 2>/dev/null; then
-            local content=$'\n# aishore runtime files\n.aishore/data/logs/\n.aishore/data/status/result.json\n.aishore/data/status/.item_source\n.aishore/data/status/.aishore.lock'
+            local content
+            content=$(printf '\n# aishore runtime files\n%s' "$gitignore_entries")
             do_append "$gitignore" "$content"
             success "Added runtime entries to .gitignore"
         fi
@@ -358,7 +392,7 @@ migrate_from_legacy() {
     do_mkdir "$BACKLOG_DIR/archive"
 
     # Migrate plan files from legacy location
-    for file in backlog.json bugs.json icebox.json sprint.json definitions.md; do
+    for file in backlog.json bugs.json sprint.json definitions.md; do
         if [[ -f "$LEGACY_DIR/plan/$file" ]]; then
             do_copy "$LEGACY_DIR/plan/$file" "$BACKLOG_DIR/$file"
             success "Migrated $file"
