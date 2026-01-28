@@ -485,6 +485,9 @@ run_agent() {
     local agent_name="$1"
     local mode="$2"
     local model="${3:-$MODEL_PRIMARY}"
+    local context_args="${4:-}"
+    local output_file="${5:-}"
+    local extra_prompt="${6:-}"
 
     local prompt_file="$AGENTS_DIR/${agent_name}.md"
     [[ ! -f "$prompt_file" ]] && { log_error "Agent not found: $agent_name"; return 1; }
@@ -492,19 +495,32 @@ run_agent() {
     rm -f "$STATUS_DIR/result.json"
 
     local context_files
-    context_files=$(build_context "@$BACKLOG_DIR/sprint.json")
+    if [[ -n "$context_args" ]]; then
+        context_files=$(build_context $context_args)
+    else
+        context_files=$(build_context "@$BACKLOG_DIR/sprint.json")
+    fi
 
     local prompt
     prompt="$(cat "$prompt_file")
+${extra_prompt:+
+$extra_prompt}
 
 ## Mode
 $mode
 $(build_completion_contract)"
 
-    AGENT_MODE="$mode" run_agent_process "$agent_name" "$model" \
-        "Bash(git:*),Edit,Write,Read,Glob,Grep" "text" \
-        "$context_files
+    if [[ -n "$output_file" ]]; then
+        AGENT_OUTPUT_FILE="$output_file" AGENT_MODE="$mode" run_agent_process "$agent_name" "$model" \
+            "Bash(git:*),Edit,Write,Read,Glob,Grep" "" \
+            "$context_files
 $prompt"
+    else
+        AGENT_MODE="$mode" run_agent_process "$agent_name" "$model" \
+            "Bash(git:*),Edit,Write,Read,Glob,Grep" "text" \
+            "$context_files
+$prompt"
+    fi
 }
 
 check_result() {
@@ -720,9 +736,6 @@ cmd_groom() {
         agent="tech-lead"
     fi
 
-    local context
-    context=$(build_context "@$BACKLOG_DIR/backlog.json" "@$BACKLOG_DIR/bugs.json")
-
     local ready_backlog
     ready_backlog=$(count_ready_items "$BACKLOG_DIR/backlog.json")
     local ready_bugs
@@ -730,21 +743,9 @@ cmd_groom() {
     log_info "Current ready buffer: $((ready_backlog + ready_bugs)) items ($ready_backlog features, $ready_bugs bugs)"
     echo ""
 
-    rm -f "$STATUS_DIR/result.json"
-
-    local prompt
-    prompt="$(cat "$AGENTS_DIR/${agent}.md")
-
-## Mode
-groom
-$(build_completion_contract)"
-
     log_info "Running $agent agent..."
 
-    AGENT_MODE="groom" run_agent_process "$agent" "$MODEL_PRIMARY" \
-        "Bash(git:*),Edit,Write,Read,Glob,Grep" "text" \
-        "$context
-$prompt"
+    run_agent "$agent" "groom" "$MODEL_PRIMARY" "@$BACKLOG_DIR/backlog.json @$BACKLOG_DIR/bugs.json"
 
     if ! check_result; then
         exit 1
@@ -773,32 +774,20 @@ cmd_review() {
     echo "Mode: $([[ "$update_docs" == "true" ]] && echo "Update docs" || echo "Read-only")"
     echo ""
 
-    local context_args=("@$BACKLOG_DIR/backlog.json" "@$BACKLOG_DIR/bugs.json")
-    [[ -f "$ARCHIVE_DIR/sprints.jsonl" ]] && context_args+=("@$ARCHIVE_DIR/sprints.jsonl")
-    local context
-    context=$(build_context "${context_args[@]}")
+    local context_args="@$BACKLOG_DIR/backlog.json @$BACKLOG_DIR/bugs.json"
+    [[ -f "$ARCHIVE_DIR/sprints.jsonl" ]] && context_args="$context_args @$ARCHIVE_DIR/sprints.jsonl"
 
-    local allowed_tools="Bash(git:*),Edit,Write,Read,Glob,Grep"
-
-    rm -f "$STATUS_DIR/result.json"
-
-    local prompt
-    prompt="$(cat "$AGENTS_DIR/architect.md")
-
-## Additional Context
+    local extra_prompt
+    extra_prompt="## Additional Context
 $([[ -n "$since" ]] && echo "Review changes since commit: $since")
-$([[ "$update_docs" == "true" ]] && echo "You may update documentation and add backlog items." || echo "Read-only review. Do not modify files.")
-$(build_completion_contract)"
+$([[ "$update_docs" == "true" ]] && echo "You may update documentation and add backlog items." || echo "Read-only review. Do not modify files.")"
 
     local output_file
     output_file="$(ensure_tmpdir)/review_output.txt"
 
     log_info "Running architect agent..."
 
-    AGENT_OUTPUT_FILE="$output_file" AGENT_MODE="review" \
-        run_agent_process "architect" "$MODEL_PRIMARY" "$allowed_tools" "" \
-        "$context
-$prompt"
+    run_agent "architect" "review" "$MODEL_PRIMARY" "$context_args" "$output_file" "$extra_prompt"
 
     # Save review output to persistent log
     local review_log
