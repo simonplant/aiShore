@@ -110,11 +110,12 @@
         "Output is concise and fits in one terminal screen",
         "shellcheck passes with no new warnings"
       ],
-      "status": "todo",
-      "passes": false,
-      "readyForSprint": true,
+      "status": "done",
+      "passes": true,
+      "readyForSprint": false,
       "groomedAt": "2026-01-28",
-      "groomingNotes": "HIGH VALUE: Simple read-only command. Follows cmd_metrics() pattern for structure. All data comes from existing JSON files via jq queries. No side effects, no risk. Can be implemented entirely as a standalone function."
+      "groomingNotes": "HIGH VALUE: Simple read-only command. Follows cmd_metrics() pattern for structure. All data comes from existing JSON files via jq queries. No side effects, no risk. Can be implemented entirely as a standalone function.",
+      "completedAt": "2026-01-28T18:29:15-07:00"
     },
     {
       "id": "FEAT-006",

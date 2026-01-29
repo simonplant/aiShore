@@ -1135,6 +1135,96 @@ EOF
     fi
 }
 
+cmd_status() {
+    require_tool jq
+
+    local backlog_file="$BACKLOG_DIR/backlog.json"
+    local bugs_file="$BACKLOG_DIR/bugs.json"
+    local sprints_file="$ARCHIVE_DIR/sprints.jsonl"
+
+    log_header "Backlog Status"
+    echo ""
+
+    # --- Item counts by status ---
+    if [[ -f "$backlog_file" ]]; then
+        local feat_todo feat_in_progress feat_done
+        feat_todo=$(jq '[.items[] | select((.status // "todo") == "todo")] | length' "$backlog_file" 2>/dev/null || echo 0)
+        feat_in_progress=$(jq '[.items[] | select((.status // "todo") == "in-progress")] | length' "$backlog_file" 2>/dev/null || echo 0)
+        feat_done=$(jq '[.items[] | select((.status // "todo") == "done")] | length' "$backlog_file" 2>/dev/null || echo 0)
+        echo "Features: $feat_todo todo, $feat_in_progress in-progress, $feat_done done"
+    else
+        log_warning "Backlog is empty"
+    fi
+
+    if [[ -f "$bugs_file" ]]; then
+        local bug_todo bug_in_progress bug_done
+        bug_todo=$(jq '[.items[] | select((.status // "todo") == "todo")] | length' "$bugs_file" 2>/dev/null || echo 0)
+        bug_in_progress=$(jq '[.items[] | select((.status // "todo") == "in-progress")] | length' "$bugs_file" 2>/dev/null || echo 0)
+        bug_done=$(jq '[.items[] | select((.status // "todo") == "done")] | length' "$bugs_file" 2>/dev/null || echo 0)
+        echo "Bugs: $bug_todo todo, $bug_in_progress in-progress, $bug_done done"
+    fi
+
+    # --- Ready for sprint ---
+    echo ""
+    log_subheader "Ready for sprint"
+    local has_ready=false
+
+    if [[ -f "$backlog_file" ]]; then
+        local ready_items
+        ready_items=$(jq -r '.items[] | select(.readyForSprint == true) | "  \(.id): \(.title)"' "$backlog_file" 2>/dev/null)
+        if [[ -n "$ready_items" ]]; then
+            echo "$ready_items"
+            has_ready=true
+        fi
+    fi
+
+    if [[ -f "$bugs_file" ]]; then
+        local ready_bugs
+        ready_bugs=$(jq -r '.items[] | select(.readyForSprint == true) | "  \(.id): \(.title)"' "$bugs_file" 2>/dev/null)
+        if [[ -n "$ready_bugs" ]]; then
+            echo "$ready_bugs"
+            has_ready=true
+        fi
+    fi
+
+    if [[ "$has_ready" == "false" ]]; then
+        log_warning "No items ready for sprint — run groom or set readyForSprint: true"
+    fi
+
+    # --- Recent sprints ---
+    echo ""
+    log_subheader "Recent sprints"
+    if [[ -f "$sprints_file" ]]; then
+        tail -5 "$sprints_file" | while IFS= read -r line; do
+            echo "  $(echo "$line" | jq -r '"\(.date) \(.itemId) \(.status)"')"
+        done
+    else
+        log_info "No sprints run yet"
+    fi
+
+    # --- Warnings ---
+    if [[ ! -f "$backlog_file" ]] && [[ ! -f "$bugs_file" ]]; then
+        echo ""
+        log_warning "Backlog is empty"
+    fi
+
+    local all_done=true
+    if [[ -f "$backlog_file" ]]; then
+        local not_done
+        not_done=$(jq '[.items[] | select((.status // "todo") != "done")] | length' "$backlog_file" 2>/dev/null || echo 0)
+        [[ "$not_done" -gt 0 ]] && all_done=false
+    fi
+    if [[ -f "$bugs_file" ]] && [[ "$all_done" == "true" ]]; then
+        local not_done_bugs
+        not_done_bugs=$(jq '[.items[] | select((.status // "todo") != "done")] | length' "$bugs_file" 2>/dev/null || echo 0)
+        [[ "$not_done_bugs" -gt 0 ]] && all_done=false
+    fi
+    if [[ "$all_done" == "true" ]] && { [[ -f "$backlog_file" ]] || [[ -f "$bugs_file" ]]; }; then
+        echo ""
+        log_info "All items completed"
+    fi
+}
+
 cmd_init() {
     log_header "aishore setup wizard"
     echo ""
@@ -1665,6 +1755,8 @@ Commands:
   metrics           Show sprint metrics
     --json          Output as JSON
 
+  status            Show backlog overview and sprint readiness
+
   update            Update aishore from upstream
     --dry-run       Check for updates without applying
     --check         Alias for --dry-run
@@ -1724,6 +1816,7 @@ main() {
         groom)   cmd_groom "$@" ;;
         review)  cmd_review "$@" ;;
         metrics) cmd_metrics "$@" ;;
+        status)  cmd_status "$@" ;;
         update)  cmd_update "$@" ;;
         checksums) cmd_checksums ;;
         init)    cmd_init "$@" ;;

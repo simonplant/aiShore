@@ -1,30 +1,30 @@
 {
-  "sprintId": "sprint-1769649668",
-  "startedAt": "2026-01-28T18:21:08-07:00",
+  "sprintId": "sprint-1769649927",
+  "startedAt": "2026-01-28T18:25:27-07:00",
   "status": "completed",
   "item": {
-    "id": "FEAT-003",
-    "title": "Sprint summary report after batch runs",
+    "id": "FEAT-005",
+    "title": "Backlog status dashboard command",
     "sourceBacklog": "backlog.json",
     "steps": [
-      "Step 1: At the start of cmd_run() (after line ~654), record a batch_start timestamp using date +%s. Declare two indexed arrays: sprint_results=() and sprint_items=() to track per-sprint outcomes.",
-      "Step 2: After each sprint iteration succeeds (line ~728) or fails (lines ~686, ~707, ~719, ~731), append to sprint_results the status ('pass' or 'fail') and to sprint_items the ITEM_ID. Also record per-sprint elapsed time using a per-iteration start timestamp.",
-      "Step 3: After the for loop (before stash restore, line ~754), if count > 1, call a new print_batch_summary() function. This function prints a formatted report.",
-      "Step 4: print_batch_summary() displays: a header line, a table row per sprint (sprint #, item ID, status, elapsed time), a separator, totals (passed, failed, total elapsed). Use printf for aligned columns.",
-      "Step 5: If any sprints failed, append a 'Failed items:' section listing each failed item ID. Read failure reasons from the FAILED_IDS associative array (store reasons instead of just 1).",
-      "Step 6: Change FAILED_IDS to store failure reasons: FAILED_IDS[\"$ITEM_ID\"]=\"Implementation failed\" (or 'Validation failed', etc.) instead of just =1. Update skip list logic to still work (check -n instead of value)."
+      "Step 1: Add cmd_status() function (place it near cmd_metrics at line ~864). Add require_tool jq. Wire 'status' into the case statement (line ~1492) as: status) cmd_status \"$@\" ;;",
+      "Step 2: Read backlog.json and bugs.json using jq. Count items by status: jq '[.items[] | .status // \"todo\"] | group_by(.) | map({(.[0]): length}) | add' for each file. Display as 'Features: X todo, Y in-progress, Z done' and 'Bugs: X todo, Y done'.",
+      "Step 3: List items where readyForSprint is true using jq '.items[] | select(.readyForSprint == true) | \"  \\(.id): \\(.title)\"'. Display under a 'Ready for sprint:' header. If none, display warning: 'No items ready for sprint — run groom or set readyForSprint: true'.",
+      "Step 4: Show last 5 completed sprints from sprints.jsonl. Use tail -5 on the file, then format each line with jq: '\\(.date) \\(.itemId) \\(.status)'. Display under 'Recent sprints:' header.",
+      "Step 5: Add warnings section: if no backlog items exist, warn 'Backlog is empty'. If all items are done, note 'All items completed'. If sprints.jsonl doesn't exist, note 'No sprints run yet'.",
+      "Step 6: Update cmd_help() to add 'status' command: 'status           Show backlog overview and sprint readiness'."
     ],
     "acceptanceCriteria": [
-      "Running `run 3` shows a summary table after all sprints complete",
-      "Summary includes per-sprint status (pass/fail) with item IDs",
-      "Total elapsed time is shown",
-      "Failed sprints list their failure reasons (implementation/validation/validator)",
-      "Single sprint runs (`run` or `run 1`) do not show the batch summary",
+      "User can run `.aishore/aishore status` and see item counts by status",
+      "Ready-for-sprint items are listed with their IDs and titles",
+      "Recent completions are shown with dates",
+      "Helpful warnings appear when backlog needs attention",
+      "Output is concise and fits in one terminal screen",
       "shellcheck passes with no new warnings"
     ],
-    "startedAt": "2026-01-28T18:21:08-07:00",
+    "startedAt": "2026-01-28T18:25:27-07:00",
     "status": "passed",
-    "completedAt": "2026-01-28T18:25:27-07:00"
+    "completedAt": "2026-01-28T18:29:15-07:00"
   },
-  "completedAt": "2026-01-28T18:25:27-07:00"
+  "completedAt": "2026-01-28T18:29:15-07:00"
 }
