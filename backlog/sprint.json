@@ -1,34 +1,31 @@
 {
-  "sprintId": "sprint-1769649054",
-  "startedAt": "2026-01-28T18:10:54-07:00",
+  "sprintId": "sprint-1769649435",
+  "startedAt": "2026-01-28T18:17:15-07:00",
   "status": "completed",
   "item": {
-    "id": "FEAT-007",
-    "title": "Sprint retry with feedback loop",
+    "id": "FEAT-002",
+    "title": "Dry-run mode for sprint execution",
     "sourceBacklog": "backlog.json",
     "steps": [
-      "Step 1: In cmd_run() argument parsing (line ~616-629), add --retries N flag that sets local retries=0 (default). Parse the numeric argument after --retries. Add retries to the header display (line ~644-652).",
-      "Step 2: After implementation (line ~682-690), wrap the validation phases (lines ~692-723) in a retry loop: for ((attempt=0; attempt<=retries; attempt++)). On first attempt, run validation normally. On retry attempts, skip re-running the developer agent — just re-validate.",
-      "Step 3: On validation failure inside the retry loop, if attempts remain: (a) read the failure reason from result.json via jq (.reason), (b) read VALIDATE_CMD stderr/stdout if command validation failed, (c) do NOT call handle_sprint_failure() — leave the tree as-is so the developer can build on it.",
-      "Step 4: Construct a retry prompt using run_agent's extra_prompt parameter (6th arg). Include: 'Previous attempt failed validation. Failure output: <captured output>. Fix the issues and ensure all acceptance criteria pass.' Then call run_agent 'developer' 'implement' with this extra_prompt.",
-      "Step 5: After the retry developer agent completes, loop back to the validation phases. If all retries exhausted, call handle_sprint_failure() as current behavior. Track attempt count in a local variable.",
-      "Step 6: When archiving via mark_complete, update sprint.json to include 'attempts': N (total attempts taken). Modify create_sprint() or mark_complete() to accept and record this.",
-      "Step 7: Update cmd_help() to document --retries N flag under the run command section."
+      "Step 1: In cmd_run() argument parsing (line ~616-629), add --dry-run flag that sets local dry_run=false. Parse it in the case statement alongside --auto-commit.",
+      "Step 2: In dry-run mode, skip acquire_lock() and stash logic (not needed since nothing is modified). Still call load_config() to show accurate config. Call pick_item() normally and display the selected item JSON with jq formatting.",
+      "Step 3: Extract the prompt assembly logic from run_agent() (lines 549-556) into a helper function build_agent_prompt() that returns the assembled prompt string. In dry-run mode, call build_agent_prompt('developer', 'implement') and display the result.",
+      "Step 4: Display the validation command ($VALIDATE_CMD) if configured, or note that no validation command is set.",
+      "Step 5: Print a summary: 'Dry run complete. Would pick: <ITEM_ID> (<title>). Model: <MODEL_PRIMARY>. Validation: <VALIDATE_CMD or none>.' Exit 0 without starting any agent or modifying files.",
+      "Step 6: Update cmd_help() to document --dry-run flag. Ensure --dry-run and --auto-commit can't both be set (log_error and exit if both specified)."
     ],
     "acceptanceCriteria": [
-      "User can run `.aishore/aishore run --retries 2` to allow up to 2 retry attempts",
-      "Each retry passes the previous validation failure to the developer agent via extra_prompt",
-      "The working tree is NOT reset between retries (agent builds on previous attempt)",
-      "After all retries exhausted, the tree IS reset (current failure behavior via handle_sprint_failure)",
-      "Default behavior (no flag) is unchanged: single attempt, reset on failure",
-      "Sprint archive records the number of attempts taken in sprint.json",
-      "Validation command output (stderr+stdout) is captured and passed to retry prompt",
-      "Validator agent failure reason from result.json is captured and passed to retry prompt",
+      "User can run `.aishore/aishore run --dry-run` and see the item that would be picked",
+      "The developer prompt is displayed so the user can review it",
+      "The validation command is shown (or 'none configured' if unset)",
+      "No agent process is started, no files are modified, no lock acquired",
+      "Dry-run with a specific ID works: `.aishore/aishore run --dry-run FEAT-002`",
+      "--dry-run and --auto-commit together produce an error",
       "shellcheck passes with no new warnings"
     ],
-    "startedAt": "2026-01-28T18:10:54-07:00",
+    "startedAt": "2026-01-28T18:17:15-07:00",
     "status": "passed",
-    "completedAt": "2026-01-28T18:17:15-07:00"
+    "completedAt": "2026-01-28T18:21:08-07:00"
   },
-  "completedAt": "2026-01-28T18:17:15-07:00"
+  "completedAt": "2026-01-28T18:21:08-07:00"
 }

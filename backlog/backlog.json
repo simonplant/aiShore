@@ -24,11 +24,12 @@
         "--dry-run and --auto-commit together produce an error",
         "shellcheck passes with no new warnings"
       ],
-      "status": "todo",
-      "passes": false,
-      "readyForSprint": true,
+      "status": "done",
+      "passes": true,
+      "readyForSprint": false,
       "groomedAt": "2026-01-28",
-      "groomingNotes": "HIGH VALUE: Low implementation cost. Key decision: extract prompt assembly into build_agent_prompt() helper so dry-run can display it without invoking run_agent_process(). No architectural risk. Reuses existing pick_item() and load_config()."
+      "groomingNotes": "HIGH VALUE: Low implementation cost. Key decision: extract prompt assembly into build_agent_prompt() helper so dry-run can display it without invoking run_agent_process(). No architectural risk. Reuses existing pick_item() and load_config().",
+      "completedAt": "2026-01-28T18:21:08-07:00"
     },
     {
       "id": "FEAT-003",

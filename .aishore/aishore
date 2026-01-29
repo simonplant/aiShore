@@ -527,6 +527,22 @@ run_agent_process() {
         "$(date -Iseconds)|$agent_label|${AGENT_MODE:-unknown}|${duration}s|$model"
 }
 
+build_agent_prompt() {
+    local agent_name="$1"
+    local mode="$2"
+
+    local prompt_file="$AGENTS_DIR/${agent_name}.md"
+    [[ ! -f "$prompt_file" ]] && { log_error "Agent not found: $agent_name"; return 1; }
+
+    local prompt
+    prompt="$(cat "$prompt_file")
+
+## Mode
+$mode
+$(build_completion_contract)"
+    echo "$prompt"
+}
+
 run_agent() {
     local agent_name="$1"
     local mode="$2"
@@ -612,11 +628,13 @@ cmd_run() {
 
     local count=1
     local auto_commit=false
+    local dry_run=false
     local specific_id=""
     local retries=0
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
+            --dry-run) dry_run=true; shift ;;
             --auto-commit) auto_commit=true; shift ;;
             --retries)
                 shift
@@ -637,6 +655,63 @@ cmd_run() {
                 shift ;;
         esac
     done
+
+    # --dry-run and --auto-commit are mutually exclusive
+    if [[ "$dry_run" == "true" && "$auto_commit" == "true" ]]; then
+        log_error "--dry-run and --auto-commit cannot be used together"
+        return 1
+    fi
+
+    # Dry-run mode: show what would happen without modifying anything
+    if [[ "$dry_run" == "true" ]]; then
+        load_config
+        cd "$PROJECT_ROOT"
+
+        log_header "aishore - Dry Run"
+        echo "Project: $PROJECT_ROOT"
+        echo ""
+
+        # Pick item (writes .item_source but that's a runtime file in .gitignore)
+        local item_json
+        if ! item_json=$(pick_item "$specific_id" ""); then
+            if [[ -n "$specific_id" ]]; then
+                log_error "Item not found: $specific_id — check backlog/backlog.json and backlog/bugs.json for valid item IDs"
+            else
+                log_warning "No ready items in backlog. Run '.aishore/aishore groom' to prepare items, or set readyForSprint: true in backlog/backlog.json"
+            fi
+            return 1
+        fi
+
+        local item_id item_title
+        item_id=$(echo "$item_json" | jq -r '.id')
+        item_title=$(echo "$item_json" | jq -r '.title // .description')
+
+        # Display selected item
+        log_subheader "Selected Item"
+        echo "$item_json" | jq .
+        echo ""
+
+        # Display developer prompt
+        log_subheader "Developer Prompt"
+        build_agent_prompt "developer" "implement"
+        echo ""
+
+        # Display validation command
+        log_subheader "Validation Command"
+        if [[ -n "$VALIDATE_CMD" ]]; then
+            echo "$VALIDATE_CMD"
+        else
+            echo "none configured"
+        fi
+        echo ""
+
+        # Summary
+        log_header "Dry run complete"
+        echo "Would pick: $item_id ($item_title)"
+        echo "Model: $MODEL_PRIMARY"
+        echo "Validation: ${VALIDATE_CMD:-none}"
+        return 0
+    fi
 
     acquire_lock
     load_config
@@ -1496,6 +1571,7 @@ Usage: .aishore/aishore <command> [options]
 Commands:
   run [count]       Run N sprints (default: 1)
   run <ID>          Run specific item by ID (e.g., TEST-006)
+    --dry-run       Preview what would happen without running agents
     --auto-commit   Automatically commit after each sprint
     --retries N     Allow up to N retry attempts on validation failure
 
@@ -1524,6 +1600,8 @@ Examples:
   .aishore/aishore run              # Run 1 sprint (auto-pick)
   .aishore/aishore run 5            # Run 5 sprints
   .aishore/aishore run TEST-006     # Run specific item
+  .aishore/aishore run --dry-run        # Preview without running
+  .aishore/aishore run --dry-run FEAT-002  # Preview specific item
   .aishore/aishore run --auto-commit 3
   .aishore/aishore run --retries 2    # Allow 2 retries on failure
   .aishore/aishore groom
