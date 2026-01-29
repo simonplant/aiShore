@@ -1,30 +1,30 @@
 {
-  "sprintId": "sprint-1769650483",
-  "startedAt": "2026-01-28T18:34:43-07:00",
+  "sprintId": "sprint-1769650727",
+  "startedAt": "2026-01-28T18:38:47-07:00",
   "status": "completed",
   "item": {
-    "id": "FEAT-006",
-    "title": "Configurable agent permissions per command",
+    "id": "FEAT-008",
+    "title": "Notification on sprint completion",
     "sourceBacklog": "backlog.json",
     "steps": [
-      "Step 1: Define default permission constants near the top of the file (after line ~72): PERMS_DEVELOPER='Bash(git:*),Edit,Write,Read,Glob,Grep', PERMS_VALIDATOR='Bash(git:*),Read,Glob,Grep', PERMS_REVIEWER='Read,Glob,Grep', PERMS_REVIEWER_DOCS='Read,Glob,Grep,Edit,Write'.",
-      "Step 2: In run_agent() (line ~529), add a new parameter or derive permissions from agent_name and mode. Map: developer/implement→PERMS_DEVELOPER, validator/validate→PERMS_VALIDATOR, architect/review→PERMS_REVIEWER. For review with output_file (--update-docs), use PERMS_REVIEWER_DOCS.",
-      "Step 3: Replace the hardcoded 'Bash(git:*),Edit,Write,Read,Glob,Grep' in run_agent() (lines ~560, ~565) with the derived permission variable.",
-      "Step 4: Add optional 'permissions' section to config.yaml loading in load_config(). Format: permissions.developer, permissions.validator, permissions.reviewer. If set, override the defaults. Use same yq/grep pattern as existing config loading.",
-      "Step 5: Update cmd_help() to document the default permission sets and the config.yaml override option."
+      "Step 1: Add NOTIFY_CMD='' default near the config defaults (line ~56-60). In load_config(), add loading from config.yaml: notifications.on_complete via yq (or grep fallback). Follow existing config loading pattern from VALIDATE_CMD.",
+      "Step 2: Add AISHORE_NOTIFY_CMD env var override in _apply_env_overrides(). Follow the existing pattern: [[ -n \"${AISHORE_NOTIFY_CMD:-}\" ]] && NOTIFY_CMD=\"$AISHORE_NOTIFY_CMD\".",
+      "Step 3: Create a send_notification() helper function that takes status ($1) and item_id ($2). Run: bash -c \"$NOTIFY_CMD\" -- \"$status\" \"$item_id\" with stderr redirected. Wrap in if/fi to catch failures and log_warning without affecting sprint outcome.",
+      "Step 4: Call send_notification at the end of each sprint iteration in cmd_run(): after mark_complete success (line ~728) call send_notification 'pass' \"$ITEM_ID\", and after each failure path (lines ~686, ~707, ~719) call send_notification 'fail' \"$ITEM_ID\". Only call if NOTIFY_CMD is non-empty.",
+      "Step 5: Update cmd_help() to document AISHORE_NOTIFY_CMD env var and notifications.on_complete config option. Add examples in comments: notify-send (Linux), osascript (macOS), curl webhook.",
+      "Step 6: Update the config.yaml template in cmd_init() to include a commented-out notifications section with examples."
     ],
     "acceptanceCriteria": [
-      "Validator agent cannot write or edit files by default",
-      "Review agent is read-only by default, gets write access with --update-docs",
-      "Developer agent retains full permissions",
-      "Users can override permissions in config.yaml",
-      "Default behavior is unchanged for users without config overrides",
-      "Groom agents (tech-lead, product-owner) retain full permissions since they update backlog files",
+      "Users can set a notification command in config.yaml or env var",
+      "The command receives sprint status (pass/fail) and item ID as arguments ($1 and $2)",
+      "Notification failures don't affect sprint outcome (log_warning only)",
+      "Works with any executable command (not tied to a specific notification system)",
+      "AISHORE_NOTIFY_CMD env var overrides config.yaml setting",
       "shellcheck passes with no new warnings"
     ],
-    "startedAt": "2026-01-28T18:34:43-07:00",
+    "startedAt": "2026-01-28T18:38:47-07:00",
     "status": "passed",
-    "completedAt": "2026-01-28T18:38:47-07:00"
+    "completedAt": "2026-01-28T18:43:18-07:00"
   },
-  "completedAt": "2026-01-28T18:38:47-07:00"
+  "completedAt": "2026-01-28T18:43:18-07:00"
 }

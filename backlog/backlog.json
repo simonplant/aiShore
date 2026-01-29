@@ -202,11 +202,12 @@
         "AISHORE_NOTIFY_CMD env var overrides config.yaml setting",
         "shellcheck passes with no new warnings"
       ],
-      "status": "todo",
-      "passes": false,
-      "readyForSprint": true,
+      "status": "done",
+      "passes": true,
+      "readyForSprint": false,
       "groomedAt": "2026-01-28",
-      "groomingNotes": "MODERATE VALUE: Follows established patterns exactly (VALIDATE_CMD loading, env var override, config.yaml). Low risk. The send_notification() helper is self-contained. Key design: pass status and item_id as positional args to the user's command via bash -c \"$cmd\" -- \"$1\" \"$2\"."
+      "groomingNotes": "MODERATE VALUE: Follows established patterns exactly (VALIDATE_CMD loading, env var override, config.yaml). Low risk. The send_notification() helper is self-contained. Key design: pass status and item_id as positional args to the user's command via bash -c \"$cmd\" -- \"$1\" \"$2\".",
+      "completedAt": "2026-01-28T18:43:18-07:00"
     }
   ]
 }

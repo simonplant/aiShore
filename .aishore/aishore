@@ -69,6 +69,7 @@ MODEL_FAST="claude-sonnet-4-20250514"
 AGENT_TIMEOUT="3600"
 VALIDATE_CMD=""
 VALIDATE_TIMEOUT="120"
+NOTIFY_CMD=""
 
 # Default permission sets per agent role
 PERMS_DEVELOPER="Bash(git:*),Edit,Write,Read,Glob,Grep"
@@ -257,6 +258,8 @@ load_config() {
         [[ -n "$cfg_val" ]] && MODEL_FAST="$cfg_val"
         cfg_val=$(yq -r '.agent.timeout // ""' "$CONFIG_FILE" 2>/dev/null) || cfg_val=""
         [[ -n "$cfg_val" ]] && AGENT_TIMEOUT="$cfg_val"
+        cfg_val=$(yq -r '.notifications.on_complete // ""' "$CONFIG_FILE" 2>/dev/null) || cfg_val=""
+        [[ -n "$cfg_val" ]] && NOTIFY_CMD="$cfg_val"
         # Permission overrides
         cfg_val=$(yq -r '.permissions.developer // ""' "$CONFIG_FILE" 2>/dev/null) || cfg_val=""
         [[ -n "$cfg_val" ]] && CFG_PERMS_DEVELOPER="$cfg_val"
@@ -286,7 +289,22 @@ _apply_env_overrides() {
     [[ -n "${AISHORE_AGENT_TIMEOUT:-}" ]] && AGENT_TIMEOUT="$AISHORE_AGENT_TIMEOUT"
     [[ -n "${AISHORE_VALIDATE_CMD:-}" ]] && VALIDATE_CMD="$AISHORE_VALIDATE_CMD"
     [[ -n "${AISHORE_VALIDATE_TIMEOUT:-}" ]] && VALIDATE_TIMEOUT="$AISHORE_VALIDATE_TIMEOUT"
+    [[ -n "${AISHORE_NOTIFY_CMD:-}" ]] && NOTIFY_CMD="$AISHORE_NOTIFY_CMD"
     return 0
+}
+
+# ============================================================================
+# NOTIFICATIONS
+# ============================================================================
+
+send_notification() {
+    local status="$1"
+    local item_id="$2"
+    if [[ -n "$NOTIFY_CMD" ]]; then
+        if ! bash -c "$NOTIFY_CMD" -- "$status" "$item_id" 2>/dev/null; then
+            log_warning "Notification command failed (exit $?) — sprint outcome unaffected"
+        fi
+    fi
 }
 
 # ============================================================================
@@ -929,6 +947,7 @@ cmd_run() {
                 sprint_results+=("fail")
                 sprint_items+=("$ITEM_ID")
                 sprint_times+=("$(( $(date +%s) - sprint_start ))")
+                send_notification "fail" "$ITEM_ID"
                 handle_sprint_failure
                 break
             fi
@@ -973,6 +992,7 @@ Fix the issues and ensure all acceptance criteria pass."
                 sprint_results+=("fail")
                 sprint_items+=("$ITEM_ID")
                 sprint_times+=("$(( $(date +%s) - sprint_start ))")
+                send_notification "fail" "$ITEM_ID"
                 handle_sprint_failure
                 break
             fi
@@ -999,6 +1019,7 @@ Fix the issues and ensure all acceptance criteria pass."
                 sprint_results+=("fail")
                 sprint_items+=("$ITEM_ID")
                 sprint_times+=("$(( $(date +%s) - sprint_start ))")
+                send_notification "fail" "$ITEM_ID"
                 handle_sprint_failure
                 break
             fi
@@ -1020,6 +1041,7 @@ Fix the issues and ensure all acceptance criteria pass."
             sprint_results+=("pass")
             sprint_items+=("$ITEM_ID")
             sprint_times+=("$(( $(date +%s) - sprint_start ))")
+            send_notification "pass" "$ITEM_ID"
         else
             log_error "Failed to mark $ITEM_ID complete"
             failed=$((failed + 1))
@@ -1027,6 +1049,7 @@ Fix the issues and ensure all acceptance criteria pass."
             sprint_results+=("fail")
             sprint_items+=("$ITEM_ID")
             sprint_times+=("$(( $(date +%s) - sprint_start ))")
+            send_notification "fail" "$ITEM_ID"
             continue
         fi
 
@@ -1473,6 +1496,13 @@ validation:
 
 # agent:
 #   timeout: 3600
+
+# notifications:
+#   on_complete: "notify-send 'aishore' \"Sprint \$1: \$2\""
+#   # Examples:
+#   #   Linux:  notify-send 'aishore' "Sprint \$1: \$2"
+#   #   macOS:  osascript -e "display notification \"Sprint \$1: \$2\" with title \"aishore\""
+#   #   Webhook: curl -s -X POST https://example.com/hook -d "{\"status\":\"\$1\",\"item\":\"\$2\"}"
 EOF
         log_success "Wrote .aishore/config.yaml"
     else
@@ -1869,6 +1899,7 @@ Environment Variables:
   AISHORE_AGENT_TIMEOUT     Agent timeout in seconds (default: 3600)
   AISHORE_VALIDATE_CMD      Validation command to run after implementation
   AISHORE_VALIDATE_TIMEOUT  Validation command timeout in seconds (default: 120)
+  AISHORE_NOTIFY_CMD        Command to run on sprint completion (receives \$1=status, \$2=item_id)
 
 Agent Permissions:
   Each agent role has a default permission set:
