@@ -140,11 +140,12 @@
         "Groom agents (tech-lead, product-owner) retain full permissions since they update backlog files",
         "shellcheck passes with no new warnings"
       ],
-      "status": "todo",
-      "passes": false,
-      "readyForSprint": true,
+      "status": "done",
+      "passes": true,
+      "readyForSprint": false,
       "groomedAt": "2026-01-28",
-      "groomingNotes": "MODERATE VALUE: Clean implementation path. run_agent() already passes allowed_tools to run_agent_process(), so the change is at the permission selection level. Key consideration: groom agents (tech-lead, product-owner) need Edit/Write to update backlog JSON files — keep them on PERMS_DEVELOPER. Config override pattern follows existing load_config() style."
+      "groomingNotes": "MODERATE VALUE: Clean implementation path. run_agent() already passes allowed_tools to run_agent_process(), so the change is at the permission selection level. Key consideration: groom agents (tech-lead, product-owner) need Edit/Write to update backlog JSON files — keep them on PERMS_DEVELOPER. Config override pattern follows existing load_config() style.",
+      "completedAt": "2026-01-28T18:38:47-07:00"
     },
     {
       "id": "FEAT-007",

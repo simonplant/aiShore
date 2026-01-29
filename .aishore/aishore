@@ -70,6 +70,17 @@ AGENT_TIMEOUT="3600"
 VALIDATE_CMD=""
 VALIDATE_TIMEOUT="120"
 
+# Default permission sets per agent role
+PERMS_DEVELOPER="Bash(git:*),Edit,Write,Read,Glob,Grep"
+PERMS_VALIDATOR="Bash(git:*),Read,Glob,Grep"
+PERMS_REVIEWER="Read,Glob,Grep"
+PERMS_REVIEWER_DOCS="Read,Glob,Grep,Edit,Write"
+
+# Config overrides (set by load_config if permissions section exists in config.yaml)
+CFG_PERMS_DEVELOPER=""
+CFG_PERMS_VALIDATOR=""
+CFG_PERMS_REVIEWER=""
+
 # ============================================================================
 # COLORS & LOGGING (inlined from common.sh)
 # ============================================================================
@@ -246,13 +257,20 @@ load_config() {
         [[ -n "$cfg_val" ]] && MODEL_FAST="$cfg_val"
         cfg_val=$(yq -r '.agent.timeout // ""' "$CONFIG_FILE" 2>/dev/null) || cfg_val=""
         [[ -n "$cfg_val" ]] && AGENT_TIMEOUT="$cfg_val"
+        # Permission overrides
+        cfg_val=$(yq -r '.permissions.developer // ""' "$CONFIG_FILE" 2>/dev/null) || cfg_val=""
+        [[ -n "$cfg_val" ]] && CFG_PERMS_DEVELOPER="$cfg_val"
+        cfg_val=$(yq -r '.permissions.validator // ""' "$CONFIG_FILE" 2>/dev/null) || cfg_val=""
+        [[ -n "$cfg_val" ]] && CFG_PERMS_VALIDATOR="$cfg_val"
+        cfg_val=$(yq -r '.permissions.reviewer // ""' "$CONFIG_FILE" 2>/dev/null) || cfg_val=""
+        [[ -n "$cfg_val" ]] && CFG_PERMS_REVIEWER="$cfg_val"
     else
         # Simple grep fallback for validation command only
         local cfg_cmd
         cfg_cmd=$(grep -E '^\s*command:' "$CONFIG_FILE" 2>/dev/null | head -1 | sed 's/.*command:\s*//' | tr -d '"' || echo "")
         [[ -n "$cfg_cmd" ]] && VALIDATE_CMD="$cfg_cmd"
         # Warn if config.yaml has uncommented model/agent settings that yq would parse
-        if grep -qE '^[^#]*(models|agent):' "$CONFIG_FILE" 2>/dev/null; then
+        if grep -qE '^[^#]*(models|agent|permissions):' "$CONFIG_FILE" 2>/dev/null; then
             log_warning "config.yaml has model/timeout settings but yq is not installed — those settings are ignored. Install yq for full config support: https://github.com/mikefarah/yq#install"
         fi
     fi
@@ -601,6 +619,26 @@ run_agent() {
         context_files=$(build_context "@$BACKLOG_DIR/sprint.json")
     fi
 
+    # Derive permissions based on agent role and mode
+    local agent_perms
+    case "$agent_name" in
+        developer)
+            agent_perms="${CFG_PERMS_DEVELOPER:-$PERMS_DEVELOPER}" ;;
+        validator)
+            agent_perms="${CFG_PERMS_VALIDATOR:-$PERMS_VALIDATOR}" ;;
+        architect)
+            if [[ -n "$output_file" ]]; then
+                agent_perms="${CFG_PERMS_REVIEWER:-$PERMS_REVIEWER_DOCS}"
+            else
+                agent_perms="${CFG_PERMS_REVIEWER:-$PERMS_REVIEWER}"
+            fi ;;
+        tech-lead|product-owner)
+            # Groom agents need full permissions to update backlog files
+            agent_perms="${CFG_PERMS_DEVELOPER:-$PERMS_DEVELOPER}" ;;
+        *)
+            agent_perms="${CFG_PERMS_DEVELOPER:-$PERMS_DEVELOPER}" ;;
+    esac
+
     local prompt
     prompt="$(cat "$prompt_file")
 ${extra_prompt:+
@@ -612,12 +650,12 @@ $(build_completion_contract)"
 
     if [[ -n "$output_file" ]]; then
         AGENT_OUTPUT_FILE="$output_file" AGENT_MODE="$mode" run_agent_process "$agent_name" "$model" \
-            "Bash(git:*),Edit,Write,Read,Glob,Grep" "" \
+            "$agent_perms" "" \
             "$context_files
 $prompt"
     else
         AGENT_MODE="$mode" run_agent_process "$agent_name" "$model" \
-            "Bash(git:*),Edit,Write,Read,Glob,Grep" "text" \
+            "$agent_perms" "text" \
             "$context_files
 $prompt"
     fi
@@ -1831,6 +1869,19 @@ Environment Variables:
   AISHORE_AGENT_TIMEOUT     Agent timeout in seconds (default: 3600)
   AISHORE_VALIDATE_CMD      Validation command to run after implementation
   AISHORE_VALIDATE_TIMEOUT  Validation command timeout in seconds (default: 120)
+
+Agent Permissions:
+  Each agent role has a default permission set:
+    developer       Bash(git:*),Edit,Write,Read,Glob,Grep
+    validator       Bash(git:*),Read,Glob,Grep
+    reviewer        Read,Glob,Grep  (with --update-docs: Read,Glob,Grep,Edit,Write)
+    groom agents    Same as developer (they update backlog files)
+
+  Override in config.yaml:
+    permissions:
+      developer: "Bash(git:*),Edit,Write,Read,Glob,Grep"
+      validator: "Bash(git:*),Read,Glob,Grep"
+      reviewer: "Read,Glob,Grep"
 
 Trust Model:
   The 'update' command fetches from GitHub and verifies SHA-256 checksums.

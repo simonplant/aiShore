@@ -1,30 +1,30 @@
 {
-  "sprintId": "sprint-1769650155",
-  "startedAt": "2026-01-28T18:29:15-07:00",
+  "sprintId": "sprint-1769650483",
+  "startedAt": "2026-01-28T18:34:43-07:00",
   "status": "completed",
   "item": {
-    "id": "FEAT-004",
-    "title": "Item dependency support in backlog",
+    "id": "FEAT-006",
+    "title": "Configurable agent permissions per command",
     "sourceBacklog": "backlog.json",
     "steps": [
-      "Step 1: No schema enforcement needed — JSON is schemaless. The 'dependsOn' field is simply an optional array of item ID strings (e.g., \"dependsOn\": [\"FEAT-002\"]). Document the convention in the backlog.json template created by cmd_init() (line ~912+).",
-      "Step 2: In pick_item() auto-pick path (line ~306-329), before the existing jq filter, build a list of 'done' item IDs from both backlog.json and bugs.json: done_ids=$(jq -r '.items[] | select(.status == \"done\") | .id'). Pass this as a jq variable.",
-      "Step 3: Add to the auto-pick jq filter: select(.dependsOn == null or (.dependsOn | all(. as $dep | $done_ids | index($dep) != null))). This skips items whose dependsOn contains any ID not in the done list. Items without dependsOn pass through unchanged.",
-      "Step 4: In pick_item() specific-ID path (line ~284-303), if the item has dependsOn, check for unmet dependencies and log_warning listing them, but proceed anyway (user explicitly chose this item).",
-      "Step 5: Add circular dependency protection: in auto-pick, if an item's dependsOn contains its own ID, skip it with log_warning. For indirect cycles, the natural behavior is safe — items with unmet deps are simply never picked.",
-      "Step 6: Update the example item in cmd_init() template to show: \"dependsOn\": [] (empty array, commented as optional)."
+      "Step 1: Define default permission constants near the top of the file (after line ~72): PERMS_DEVELOPER='Bash(git:*),Edit,Write,Read,Glob,Grep', PERMS_VALIDATOR='Bash(git:*),Read,Glob,Grep', PERMS_REVIEWER='Read,Glob,Grep', PERMS_REVIEWER_DOCS='Read,Glob,Grep,Edit,Write'.",
+      "Step 2: In run_agent() (line ~529), add a new parameter or derive permissions from agent_name and mode. Map: developer/implement→PERMS_DEVELOPER, validator/validate→PERMS_VALIDATOR, architect/review→PERMS_REVIEWER. For review with output_file (--update-docs), use PERMS_REVIEWER_DOCS.",
+      "Step 3: Replace the hardcoded 'Bash(git:*),Edit,Write,Read,Glob,Grep' in run_agent() (lines ~560, ~565) with the derived permission variable.",
+      "Step 4: Add optional 'permissions' section to config.yaml loading in load_config(). Format: permissions.developer, permissions.validator, permissions.reviewer. If set, override the defaults. Use same yq/grep pattern as existing config loading.",
+      "Step 5: Update cmd_help() to document the default permission sets and the config.yaml override option."
     ],
     "acceptanceCriteria": [
-      "Items with `dependsOn: ['FEAT-002']` are skipped by auto-pick if FEAT-002 status is not 'done'",
-      "Explicit ID selection (`run FEAT-003`) works even with unmet dependencies (with a warning)",
-      "Items without dependsOn are unaffected",
-      "Circular dependencies don't cause infinite loops (log error and skip)",
-      "Self-referencing dependsOn is detected and skipped",
+      "Validator agent cannot write or edit files by default",
+      "Review agent is read-only by default, gets write access with --update-docs",
+      "Developer agent retains full permissions",
+      "Users can override permissions in config.yaml",
+      "Default behavior is unchanged for users without config overrides",
+      "Groom agents (tech-lead, product-owner) retain full permissions since they update backlog files",
       "shellcheck passes with no new warnings"
     ],
-    "startedAt": "2026-01-28T18:29:15-07:00",
+    "startedAt": "2026-01-28T18:34:43-07:00",
     "status": "passed",
-    "completedAt": "2026-01-28T18:34:43-07:00"
+    "completedAt": "2026-01-28T18:38:47-07:00"
   },
-  "completedAt": "2026-01-28T18:34:43-07:00"
+  "completedAt": "2026-01-28T18:38:47-07:00"
 }
